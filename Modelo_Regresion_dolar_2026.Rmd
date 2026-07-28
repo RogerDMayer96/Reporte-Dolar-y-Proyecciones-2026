@@ -1777,7 +1777,9 @@ ds3_mar <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 ds4_mar <- ts(c(0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 15), frequency = 52)
 
 exogen_mar <- ts.intersect(ds1_mar, ds2_mar, ds3_mar, ds4_mar)
-exogen1_mar <- window(exogen_mar, start = c(2025, 15), end = c(2026, 27))
+
+# CORRECCIÓN: recortar la matriz exógena usando el rango de fechas exacto de la serie de datos
+exogen1_mar <- window(exogen_mar, start = start(ts_semana_martes), end = end(ts_semana_martes))
 
 modelo1_mar <- Arima(ts_semana_martes, order = c(0, 1, 0), xreg = as.matrix(exogen1_mar), include.mean = TRUE)
 

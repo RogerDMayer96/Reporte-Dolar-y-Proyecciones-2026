@@ -1821,7 +1821,7 @@ exogen <- ts.intersect(d_s1,d_s2,d_s3,d_s4)
 exogen1 <-window(exogen, start = c(2025, 7), end=c(2026, 27))
 exogen2<-window(exogen, start = c(2026, 28))
 # exogen2
-exogen2 <- matrix(0, nrow = 14, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 modelo1 <- Arima(ts_semana,
                  order = c(0,1,0),
@@ -1833,10 +1833,10 @@ modelo1 <- Arima(ts_semana,
 # shapiro.test(resid02)
 # Box.test(resid02, type="Ljung-Box")
 
-exogen2 <- matrix(0, nrow = 4, ncol = 4)
+exogen2 <- matrix(0, nrow = 1, ncol = 4)
 
 pronostico <- forecast(modelo1,
-                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       h = 1, level = c(20,30,40,50,60,70,80,90,95),
                        xreg = exogen2)
 
 
@@ -1919,7 +1919,7 @@ exogen <- ts.intersect(d_s1,d_s2,d_s3,d_s4)
 
 exogen1 <-window(exogen, start = c(2025, 15), end=c(2026, 27))
 exogen2<-window(exogen, start = c(2026, 28))
-exogen2 <- matrix(0, nrow = 14, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 modelo1 <- Arima(ts_semana,
                  order = c(0,1,0),
@@ -1931,10 +1931,10 @@ modelo1 <- Arima(ts_semana,
 # shapiro.test(resid02)
 # Box.test(resid02, type="Ljung-Box")
 
-exogen2 <- matrix(0, nrow = 4, ncol = 4)
+exogen2 <- matrix(0, nrow = 1, ncol = 4)
 
 pronostico <- forecast(modelo1,
-                        h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                        h = 1, level = c(20,30,40,50,60,70,80,90,95),
                         xreg = exogen2)
 
 
@@ -2007,7 +2007,7 @@ exogen <- ts.intersect(d_s1,d_s2)
 
 exogen1 <-window(exogen, start = c(2025, 4), end=c(2026, 27))
 exogen2<-window(exogen, start = c(2026, 28))
-exogen2 <- matrix(0, nrow = 14, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 modelo1 <- Arima(ts_semana,
                  order = c(0,1,0),
@@ -2019,10 +2019,10 @@ modelo1 <- Arima(ts_semana,
 # shapiro.test(resid02)
 # Box.test(resid02, type="Ljung-Box")
 
-exogen2 <- matrix(0, nrow = 4, ncol = 2)
+exogen2 <- matrix(0, nrow = 1, ncol = 2)
 
 pronostico <- forecast(modelo1,
-                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       h = 1, level = c(20,30,40,50,60,70,80,90,95),
                        xreg = exogen2)
 
 
@@ -2117,7 +2117,7 @@ exogen <- ts.intersect(d_s1,d_s2)
 
 exogen1 <-window(exogen, start = c(2025, 9), end=c(2026, 27))
 exogen2<-window(exogen, start = c(2026, 28))
-exogen2 <- matrix(0, nrow = 14, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 modelo1 <- Arima(ts_semana,
                  order = c(0,1,0),
@@ -2130,10 +2130,10 @@ modelo1 <- Arima(ts_semana,
 # shapiro.test(resid02)
 # Box.test(resid02, type="Ljung-Box")
 
-exogen2 <- matrix(0, nrow = 4, ncol = 2)
+exogen2 <- matrix(0, nrow = 1, ncol = 2)
 
 pronostico <- forecast(modelo1,
-                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       h = 1, level = c(20,30,40,50,60,70,80,90,95),
                        xreg = exogen2)
 
 
@@ -2216,7 +2216,7 @@ exogen <- ts.intersect(d_s1)
 
 exogen1 <-window(exogen, start = c(2025, 12), end=c(2026, 27))
 exogen2<-window(exogen, start = c(2026, 28))
-exogen2 <- matrix(0, nrow = 14, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 modelo1 <- Arima(ts_semana,
                  order = c(0,1,0),
@@ -2229,10 +2229,10 @@ modelo1 <- Arima(ts_semana,
 # Box.test(resid02, type="Ljung-Box")
 
 
-exogen2 <- matrix(0, nrow = 4, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 pronostico <- forecast(modelo1,
-                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       h = 1, level = c(20,30,40,50,60,70,80,90,95),
                        xreg = exogen2)
 
 
@@ -2303,7 +2303,7 @@ exogen <- ts.intersect(d_s1,d_s2)
 
 exogen1 <-window(exogen, start = c(2025, 8), end=c(2026, 27))
 exogen2<-window(exogen, start = c(2026, 28))
-exogen2 <- matrix(0, nrow = 14, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 modelo1 <- Arima(ts_semana,
                  order = c(0,1,0),
@@ -2315,10 +2315,10 @@ modelo1 <- Arima(ts_semana,
 # shapiro.test(resid02)
 # Box.test(resid02, type="Ljung-Box")
 
-exogen2 <- matrix(0, nrow = 4, ncol = 2)
+exogen2 <- matrix(0, nrow = 1, ncol = 2)
 
 pronostico <- forecast(modelo1,
-                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       h = 1, level = c(20,30,40,50,60,70,80,90,95),
                        xreg = exogen2)
 
 
@@ -2389,7 +2389,7 @@ exogen <- ts.intersect(d_s1,d_s2)
 
 exogen1 <-window(exogen, start = c(2025, 12), end=c(2026, 27))
 exogen2<-window(exogen, start = c(2026, 28))
-exogen2 <- matrix(0, nrow = 14, ncol = 1)
+exogen2 <- matrix(0, nrow = 1, ncol = 1)
 
 modelo1 <- Arima(ts_semana,
                  order = c(0,1,0),
@@ -2402,10 +2402,10 @@ modelo1 <- Arima(ts_semana,
 # shapiro.test(resid02)
 # Box.test(resid02, type="Ljung-Box")
 
-exogen2 <- matrix(0, nrow = 4, ncol = 2)
+exogen2 <- matrix(0, nrow = 1, ncol = 2)
 
 pronostico <- forecast(modelo1,
-                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       h = 1, level = c(20,30,40,50,60,70,80,90,95),
                        xreg = exogen2)
 
 

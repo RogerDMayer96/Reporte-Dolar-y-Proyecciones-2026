@@ -1755,8 +1755,8 @@ ds2 <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,
 ds3 <- ts(c(0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 7), frequency = 52)
 ds4 <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 7), frequency = 52)
 
-exogen <- ts.intersect(ds1, ds2, ds3, ds4)
-exogen1 <- window(exogen, start = c(2025, 7), end = c(2026, 27))
+exogen_lunes <- cbind(ds1, ds2, ds3, ds4)
+exogen1 <- head(exogen_lunes, length(ts_semana_lunes))
 
 modelo1 <- Arima(ts_semana_lunes, order = c(0, 1, 0), xreg = as.matrix(exogen1), include.mean = TRUE)
 
@@ -1776,10 +1776,8 @@ ds2_mar <- ts(c(0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 ds3_mar <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 15), frequency = 52)
 ds4_mar <- ts(c(0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 15), frequency = 52)
 
-exogen_mar <- ts.intersect(ds1_mar, ds2_mar, ds3_mar, ds4_mar)
-
-# CORRECCIÓN: recortar la matriz exógena usando el rango de fechas exacto de la serie de datos
-exogen1_mar <- window(exogen_mar, start = start(ts_semana_martes), end = end(ts_semana_martes))
+exogen_mar <- cbind(ds1_mar, ds2_mar, ds3_mar, ds4_mar)
+exogen1_mar <- head(exogen_mar, length(ts_semana_martes))
 
 modelo1_mar <- Arima(ts_semana_martes, order = c(0, 1, 0), xreg = as.matrix(exogen1_mar), include.mean = TRUE)
 
@@ -1797,8 +1795,8 @@ ts_semana_miercoles <- ts(df_miercoles$Promedio, start = c(2025, 4), frequency =
 ds1_mie <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 4), frequency = 52)
 ds2_mie <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 4), frequency = 52)
 
-exogen_mie <- ts.intersect(ds1_mie, ds2_mie)
-exogen1_mie <- window(exogen_mie, start = c(2025, 4), end = c(2026, 27))
+exogen_mie <- cbind(ds1_mie, ds2_mie)
+exogen1_mie <- head(exogen_mie, length(ts_semana_miercoles))
 
 modelo1_mie <- Arima(ts_semana_miercoles, order = c(0, 1, 0), xreg = as.matrix(exogen1_mie), include.mean = TRUE)
 
@@ -1816,8 +1814,8 @@ ts_semana_jueves <- ts(df_jueves$Promedio, start = c(2025, 9), frequency = 52)
 ds1_jue <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 9), frequency = 52)
 ds2_jue <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 9), frequency = 52)
 
-exogen_jue <- ts.intersect(ds1_jue, ds2_jue)
-exogen1_jue <- window(exogen_jue, start = c(2025, 9), end = c(2026, 27))
+exogen_jue <- cbind(ds1_jue, ds2_jue)
+exogen1_jue <- head(exogen_jue, length(ts_semana_jueves))
 
 modelo1_jue <- Arima(ts_semana_jueves, order = c(0, 1, 0), xreg = as.matrix(exogen1_jue), include.mean = TRUE)
 
@@ -1834,7 +1832,7 @@ ts_semana_viernes <- ts(df_viernes$Promedio, start = c(2025, 12), frequency = 52
 
 ds1_vie <- ts(c(0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 12), frequency = 52)
 
-exogen1_vie <- window(ds1_vie, start = c(2025, 12), end = c(2026, 27))
+exogen1_vie <- head(ds1_vie, length(ts_semana_viernes))
 
 modelo1_vie <- Arima(ts_semana_viernes, order = c(0, 1, 0), xreg = as.matrix(exogen1_vie), include.mean = TRUE)
 
@@ -1852,8 +1850,8 @@ ts_semana_sabado <- ts(df_sabado$Promedio, start = c(2025, 8), frequency = 52)
 ds1_sab <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 8), frequency = 52)
 ds2_sab <- ts(c(0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 8), frequency = 52)
 
-exogen_sab <- ts.intersect(ds1_sab, ds2_sab)
-exogen1_sab <- window(exogen_sab, start = c(2025, 8), end = c(2026, 27))
+exogen_sab <- cbind(ds1_sab, ds2_sab)
+exogen1_sab <- head(exogen_sab, length(ts_semana_sabado))
 
 modelo1_sab <- Arima(ts_semana_sabado, order = c(0, 1, 0), xreg = as.matrix(exogen1_sab), include.mean = TRUE)
 
@@ -1871,8 +1869,8 @@ ts_semana_domingo <- ts(df_domingo$Promedio, start = c(2025, 12), frequency = 52
 ds1_dom <- ts(c(0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 12), frequency = 52)
 ds2_dom <- ts(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), start = c(2025, 12), frequency = 52)
 
-exogen_dom <- ts.intersect(ds1_dom, ds2_dom)
-exogen1_dom <- window(exogen_dom, start = c(2025, 12), end = c(2026, 27))
+exogen_dom <- cbind(ds1_dom, ds2_dom)
+exogen1_dom <- head(exogen_dom, length(ts_semana_domingo))
 
 modelo1_dom <- Arima(ts_semana_domingo, order = c(0, 1, 0), xreg = as.matrix(exogen1_dom), include.mean = TRUE)
 

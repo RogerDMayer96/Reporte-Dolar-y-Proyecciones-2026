@@ -1,0 +1,2546 @@
+---
+title: "ANALISIS DEL DOLAR PARALELO Y TIPO DE CAMBIO FLEXIBLE"
+author: |
+  Lic. Roger Andy Miranda Tarija | Economista y Cientifico de datos | 📧 roger_miranda_@outlook.com | ▶️ [YouTube](https://www.youtube.com/@ramtyddmt) | 🎵 [TikTok](https://www.tiktok.com/@rogermirandaramt?is_from_webapp=1&sender_device=pc)
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme:
+      version: 5
+      bg: "#0d1117"
+      fg: "#e6edf3"
+      primary: "#1ee29d"
+      secondary: "#537D8D"
+      base_font:
+        google: Prompt
+      heading_font:
+        google: Proza Libre
+    css: estilos2026.css
+    includes:
+      after_body: sidebar2026.html
+---
+
+
+```{r setup-fecha, echo=FALSE, message=FALSE, warning=FALSE}
+# Fecha actual formateada en español, para reutilizar en títulos sin escribirla a mano
+meses_es_setup <- c("Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                     "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre")
+fecha_hoy_txt <- paste0(format(Sys.Date(), "%d"), " de ",
+                         meses_es_setup[as.numeric(format(Sys.Date(), "%m"))],
+                         " de ", format(Sys.Date(), "%Y"))
+```
+
+# COTIZACION BOLIVIA
+La información es de la página: **www.usdtbol.com** misma que especifica que los valores son el promedio de las primeras 5 cotizaciones de la fecha. Los datos recolectados son de la página de P2P de Binance desde hace 1 año.
+
+## Column 1 {data-width=700, .tabset}
+### Historico del Dólar Blue - Al `r fecha_hoy_txt` (Binance)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# options(encoding = "UTF-8")
+# Sys.setlocale("LC_ALL", "en_US.UTF-8")
+
+library(lubridate)
+
+# 1. Obtener el domingo recién pasado
+fecha_cierre <- floor_date(Sys.Date() - days(1), unit = "week")
+
+library(jsonlite)
+library(httr)
+
+res <- GET("https://usdtbol.com/api/41j11x65l36h", query = list(callback = "cb"),
+  add_headers("User-Agent" = "Mozilla/5.0", "Referer" = "https://usdtbol.com/"))
+raw <- content(res, "text", encoding = "UTF-8")
+
+# Extraer entre el primer ( y el último )
+json_str <- substr(raw, 4, nchar(raw) - 2)
+data <- fromJSON(json_str)
+
+df <- data.frame(fecha = as.POSIXct(data$times, origin = "1970-01-01"),
+                 precio = data$list)
+
+library(plotly)
+library(htmlwidgets)
+library(tseries)
+library(lmtest)
+
+df$fecha <- as.POSIXct(df$fecha, format = "%m/%d/%Y %H:%M")
+df$precio <- as.numeric(df$precio)
+
+fig <- plot_ly(data = df,  x = ~fecha,  y = ~precio,
+               type = "scatter",  mode = "lines+markers",
+               line = list(color = "#1ee29d"),
+               marker = list(size = 4, color = "#1ee29d"),
+               hovertext = ~paste(format(fecha, "%d/%m/%Y"),"- Hora:",
+                                  format(fecha, "%H:%M"),"=> [Bs.", precio,"]"),
+               hoverinfo = "text") %>%
+      config(displaylogo = FALSE,
+      modeBarButtonsToRemove = c("zoom2d", "pan2d", "lasso2d",
+                                 "autoScale2d", "hoverCompareCartesian"))
+
+fig <- fig %>% 
+  layout(title = "", xaxis = list(title = "Periodo", 
+         range = c(min(df$fecha), max(df$fecha)), 
+                 rangeslider = list(visible = TRUE, 
+                 font = list(color = "#0d1117")),
+                 rangeselector = list(buttons = list(
+                list(count = 1, label = "Hoy", step = "day", stepmode = "todate"),
+                list(count = 2, label = "2 días", step = "day", stepmode = "backward"),
+                list(count = 7, label = "1 semana", step = "day", stepmode = "backward"),
+                list(count = 1, label = "1 mes", step = "month", stepmode = "backward"),
+                list(count = 3, label = "3 meses", step = "month", stepmode = "backward"),
+                list(count = 7, label = "7 meses", step = "month", stepmode = "backward"),
+                list(step = "all", label = "Completo")),font = list(color = "#0d1117"))),
+         yaxis = list(title = "Valor del Dólar (Bs.)", autorange = TRUE), 
+         plot_bgcolor = "#0d1117", paper_bgcolor = "#0d1117", 
+         font = list(color = "#e6edf3"))
+
+# Script JS: recalcula eje Y dinámicamente según rango visible en X
+fig <- onRender(fig, "function(el, x) {
+    el.on('plotly_relayout', function(e) {
+      // Solo actúa si se modificó el rango del eje X
+      if(e['xaxis.range[0]'] && e['xaxis.range[1]']) {
+        var gd = el;
+        var x0 = new Date(e['xaxis.range[0]']);
+        var x1 = new Date(e['xaxis.range[1]']);
+
+        // Buscar datos visibles
+        var yVisible = [];
+        gd.data.forEach(trace => {
+          if(trace.x && trace.y) {
+            for(let i = 0; i < trace.x.length; i++) {
+              let xi = new Date(trace.x[i]);
+              if(xi >= x0 && xi <= x1) yVisible.push(trace.y[i]); } } });
+
+        // Calcular min y max visibles
+        if(yVisible.length > 0) {
+          var ymin = Math.min(...yVisible);
+          var ymax = Math.max(...yVisible);
+          Plotly.relayout(gd, {'yaxis.range': [ymin, ymax]}); } } }); } ")
+
+fig
+
+```
+## column 2 {data-width=300}
+### Resumen de los valores Máximos y Mínimos
+```{r}
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(lubridate)
+library(scales)
+
+tabla_wide <- df %>%
+  mutate(Año = year(fecha), Mes = month(fecha, label = TRUE)) %>%
+  group_by(Año, Mes) %>%
+  summarise(Max = max(precio, na.rm = TRUE),
+            Min = min(precio, na.rm = TRUE),
+            .groups = "drop") %>%
+  pivot_wider(id_cols = Mes, names_from = Año, values_from = c(Max, Min))
+
+# ── Garantizar que existan columnas para 2024, 2025 y 2026 ─────────────────
+# (si un año no tiene datos la columna no se crea; la agregamos como NA)
+for (yr in c("2024", "2025", "2026")) {
+  if (!paste0("Min_", yr) %in% names(tabla_wide))
+    tabla_wide[[paste0("Min_", yr)]] <- NA_real_
+  if (!paste0("Max_", yr) %in% names(tabla_wide))
+    tabla_wide[[paste0("Max_", yr)]] <- NA_real_
+}
+
+# ── Ordenar columnas por nombre y traducir meses ────────────────────────────
+tabla <- tabla_wide %>%
+  select(Mes,
+         Min_2024, Max_2024,
+         Min_2025, Max_2025,
+         Min_2026, Max_2026) %>%
+  mutate(Mes = recode(as.character(Mes),
+                      "Jan" = "Enero",    "Feb" = "Febrero",   "Mar" = "Marzo",
+                      "Apr" = "Abril",    "May" = "Mayo",       "Jun" = "Junio",
+                      "Jul" = "Julio",    "Aug" = "Agosto",     "Sep" = "Septiembre",
+                      "Oct" = "Octubre",  "Nov" = "Noviembre",  "Dec" = "Diciembre")) %>%
+  arrange(match(Mes, c("Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                        "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre")))
+
+# ── Tabla de visualización: NA → "" para mostrar celdas vacías ──────────────
+tabla_display <- tabla %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), "", .)))
+
+# ── Paletas de color (na.color = color neutro oscuro) ───────────────────────
+rango_valores1 <- c(8.8, 15.5)
+rango_valores2 <- c(9.1, 19.5)
+NEUTRO <- "#ffffff"   # color de fondo para celdas sin dato
+
+col_rojo  <- scales::col_numeric(c("#DEF4C6","#73E2A7","#1C7C54"),
+                                  domain = rango_valores1, na.color = NEUTRO)
+col_verde <- scales::col_numeric(c("#FF7F7F","#FF004F","#960018"),
+                                  domain = rango_valores2, na.color = NEUTRO)
+
+# Función que asegura que ningún NA llegue a column_spec
+safe_bg <- function(pal_fn, col_vec) {
+  out <- suppressWarnings(pal_fn(col_vec))
+  out[is.na(out) | out == "NA"] <- NEUTRO
+  out
+}
+
+# ── Construcción de la tabla ────────────────────────────────────────────────
+tabla_kable <- kbl(tabla_display, caption = "",
+                   col.names = c("", "Mínimo", "Máximo",
+                                      "Mínimo", "Máximo",
+                                      "Mínimo", "Máximo"),
+                   align = "lcccccc", escape = FALSE) %>%
+  column_spec(2, color = "black",    background = safe_bg(col_rojo,  tabla$Min_2024)) %>%
+  column_spec(3, color = "black",    background = safe_bg(col_verde, tabla$Max_2024)) %>%
+  column_spec(4, color = "black",    background = safe_bg(col_rojo,  tabla$Min_2025)) %>%
+  column_spec(5, color = "black",    background = safe_bg(col_verde, tabla$Max_2025)) %>%
+  column_spec(6, color = "black",  background = safe_bg(col_rojo,  tabla$Min_2026)) %>%
+  column_spec(7, color = "black",  background = safe_bg(col_verde, tabla$Max_2026)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 13) %>%
+  add_header_above(c("MES" = 1, "AÑO 2024" = 2, "AÑO 2025" = 2, "AÑO 2026" = 2)) %>%
+  kable_minimal()
+
+tabla_kable
+```
+
+### Valor Actual - Binance
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Traemos también la serie del dólar referencial flexible (BCB) para obtener
+# su último valor publicado y mostrarlo junto al de Binance
+fetch_ultimo_bcb <- function(api_id) {
+  res <- GET(paste0("https://usdtbol.com/api/", api_id),
+             query = list(callback = "cb"),
+             add_headers("User-Agent" = "Mozilla/5.0", "Referer" = "https://usdtbol.com/"))
+  raw <- content(res, "text", encoding = "UTF-8")
+  json_clean <- sub("^[a-zA-Z0-9_$]+\\((.*)\\);?$", "\\1", raw)
+  data <- fromJSON(json_clean)
+  data.frame(fecha = as.POSIXct(data$times, origin = "1970-01-01"),
+             precio = as.numeric(data$list))
+}
+
+df_bcb_ultimo <- fetch_ultimo_bcb("d5s4yr95l36h")
+
+ultimo_binance <- df %>% arrange(fecha) %>% slice_tail(n = 1)
+ultimo_bcb <- df_bcb_ultimo %>% filter(!is.na(precio)) %>% arrange(fecha) %>% slice_tail(n = 1)
+
+library(flexdashboard)
+valueBox(
+  value = paste0("Bs. ", round(ultimo_binance$precio, 2)),
+  caption = paste0("Binance (Paralelo) 
+                   Últ. Public.: ",
+                    format(ultimo_binance$fecha, "%d/%m/%Y %H:%M")),
+  icon = "fa-coins",
+  color = "success"
+)
+```
+
+### Valor Actual - Dólar Flexible
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+valueBox(
+  value = paste0("Bs. ", round(ultimo_bcb$precio, 2)),
+  caption = paste0("Tipo de Cambio Flexible (BCB)
+                   Últ. Public.: ",
+                    format(ultimo_bcb$fecha, "%d/%m/%Y %H:%M")),
+  icon = "fa-university",
+  color = "primary"
+)
+```
+
+# OTROS DATOS
+
+La información es de la página: **www.usdtbol.com** misma que especifica que los valores son el promedio de las primeras 5 cotizaciones de la fecha. Los datos recolectados son de la página de P2P de Binance desde hace 1 año.
+
+## Column 1 {data-width=650, .tabset}
+### Dia
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df_dia <- df %>% 
+  mutate(Dia = date(fecha)) %>% 
+  group_by(Dia) %>% 
+  summarise(Promedio = round(mean(precio),2))
+
+df_dia$Dia <- as.POSIXct(df_dia$Dia, format = "%m/%d/%Y")
+
+fig1 <- plot_ly(data = df_dia,  x = ~Dia,  y = ~Promedio,
+               type = "scatter",  mode = "lines+markers",
+               line = list(width=4,color = "#537D8D"),
+               marker = list(size = 8, color = "#537D8D"),
+               hovertext = ~paste(format(Dia, "%d/%m/%Y"),
+                                  "- Bs.", Promedio),
+               hoverinfo = "text") %>%
+      config(displaylogo = FALSE,
+      modeBarButtonsToRemove = c("zoom2d", "pan2d", "lasso2d",
+                                 "autoScale2d", "hoverCompareCartesian"))
+fig1 <- fig1 %>% 
+  layout(title = "", 
+         xaxis = list(title = "Periodo", 
+              range = c(min(df_dia$Dia), max(df_dia$Dia) + days(1)), 
+              rangeslider = list(visible = TRUE, font = list(color = "#0d1117")), 
+              rangeselector = list(buttons = list(
+                list(count = 7, label = "1 semana", step = "day", stepmode = "backward"),
+                list(count = 14, label = "2 semana", step = "day", stepmode = "backward"),
+                list(count = 1, label = "1 mes", step = "month", stepmode = "backward"),
+                list(count = 3, label = "3 meses", step = "month", stepmode = "backward"),
+                list(count = 7, label = "7 meses", step = "month", stepmode = "backward"),
+                list(step = "all", label = "Completo")),
+                        font = list(color = "#0d1117"))), 
+         yaxis = list(title = "Valor del Dólar (Bs.)", autorange = TRUE), 
+         plot_bgcolor = "#0d1117", 
+         paper_bgcolor = "#0d1117", 
+         font = list(color = "#e6edf3"))
+
+# Script JS: recalcula eje Y dinámicamente según rango visible en X
+fig1 <- onRender(fig1, "function(el, x) {
+    el.on('plotly_relayout', function(e) {
+      // Solo actúa si se modificó el rango del eje X
+      if(e['xaxis.range[0]'] && e['xaxis.range[1]']) {
+        var gd = el;
+        var x0 = new Date(e['xaxis.range[0]']);
+        var x1 = new Date(e['xaxis.range[1]']);
+
+        // Buscar datos visibles
+        var yVisible = [];
+        gd.data.forEach(trace => {
+          if(trace.x && trace.y) {
+            for(let i = 0; i < trace.x.length; i++) {
+              let xi = new Date(trace.x[i]);
+              if(xi >= x0 && xi <= x1) yVisible.push(trace.y[i]); } } });
+
+        // Calcular min y max visibles
+        if(yVisible.length > 0) {
+          var ymin = Math.min(...yVisible);
+          var ymax = Math.max(...yVisible);
+          Plotly.relayout(gd, {'yaxis.range': [ymin, ymax]}); } } }); } ")
+
+fig1
+
+```
+
+
+
+### Semanal
+```{r}
+df_semanal <- df %>%
+  mutate(Semana = floor_date(fecha, unit = "week")) %>%
+  group_by(Semana) %>%
+  summarise(Promedio = round(mean(precio, na.rm = TRUE), 2))
+
+
+df_semanal$Semana <- as.POSIXct(df_semanal$Semana, format = "%m/%d/%Y")
+
+fig2 <- plot_ly(data = df_semanal,  x = ~Semana,  y = ~Promedio,
+               type = "scatter",  mode = "lines+markers",
+               line = list(width=5,color = "#0CCA4A"),
+               marker = list(size = 12, color = "#0CCA4A"),
+               hovertext = ~paste(format(Semana, "%d/%m/%Y"),
+                                  "- Bs.", Promedio),
+               hoverinfo = "text") %>%
+      config(displaylogo = FALSE,
+      modeBarButtonsToRemove = c("zoom2d", "pan2d", "lasso2d",
+                                 "autoScale2d", "hoverCompareCartesian"))
+
+fig2 <- fig2 %>% 
+  layout(title = "", 
+         xaxis = list(title = "Periodo", 
+              range = c(min(df_semanal$Semana), max(df_semanal$Semana) + days(1)), 
+              rangeslider = list(visible = TRUE, font = list(color = "#0d1117")), 
+              rangeselector = list(buttons = list(
+                list(count = 1, label = "1 mes", step = "month", stepmode = "backward"),
+                list(count = 3, label = "3 meses", step = "month", stepmode = "backward"),
+                list(count = 7, label = "7 meses", step = "month", stepmode = "backward"),
+                list(step = "all", label = "Completo")),
+                        font = list(color = "#0d1117"))), 
+         yaxis = list(title = "Valor del Dólar (Bs.)", autorange = TRUE), 
+         plot_bgcolor = "#0d1117", 
+         paper_bgcolor = "#0d1117", 
+         font = list(color = "#e6edf3"))
+
+# Script JS: recalcula eje Y dinámicamente según rango visible en X
+fig2 <- onRender(fig2, "function(el, x) {
+    el.on('plotly_relayout', function(e) {
+      // Solo actúa si se modificó el rango del eje X
+      if(e['xaxis.range[0]'] && e['xaxis.range[1]']) {
+        var gd = el;
+        var x0 = new Date(e['xaxis.range[0]']);
+        var x1 = new Date(e['xaxis.range[1]']);
+
+        // Buscar datos visibles
+        var yVisible = [];
+        gd.data.forEach(trace => {
+          if(trace.x && trace.y) {
+            for(let i = 0; i < trace.x.length; i++) {
+              let xi = new Date(trace.x[i]);
+              if(xi >= x0 && xi <= x1) yVisible.push(trace.y[i]); } } });
+
+        // Calcular min y max visibles
+        if(yVisible.length > 0) {
+          var ymin = Math.min(...yVisible);
+          var ymax = Math.max(...yVisible);
+          Plotly.relayout(gd, {'yaxis.range': [ymin, ymax]}); } } }); } ")
+
+fig2
+
+```
+
+## column 2 {data-width=350}
+### Cambio porcentual por Dia
+
+```{r}
+library(htmltools)
+
+datos_var_dia <- df_dia %>%
+  mutate(Dia = as.Date(Dia)) %>%
+  arrange(Dia) %>%
+  tail(8) %>%
+  mutate(Variacion = round(((Promedio / lag(Promedio)) - 1) * 100, 2),
+         DiaTexto = case_when(
+           wday(Dia) == 1 ~ "Domingo",
+           wday(Dia) == 2 ~ "Lunes",
+           wday(Dia) == 3 ~ "Martes",
+           wday(Dia) == 4 ~ "Miércoles",
+           wday(Dia) == 5 ~ "Jueves",
+           wday(Dia) == 6 ~ "Viernes",
+           wday(Dia) == 7 ~ "Sábado")) %>%
+  filter(!is.na(Variacion))
+
+cajas_dia <- lapply(seq_len(nrow(datos_var_dia)), function(i) {
+  color <- ifelse(datos_var_dia$Variacion[i] >= 0, "#1ee29d", "#ff4d4d")
+  signo <- ifelse(datos_var_dia$Variacion[i] >= 0, "+", "")
+  div(style = sprintf("background:#161b22;border-left:4px solid %s;border-radius:6px;padding:8px 12px;", color),
+      span(style = "color:#8b949e;font-size:0.75rem;",
+           sprintf("%s (%s)", datos_var_dia$DiaTexto[i], format(datos_var_dia$Dia[i], "%d/%m/%Y"))),
+      tags$br(),
+      span(style = sprintf("color:%s;font-size:1.1rem;font-weight:700;", color),
+           sprintf("%s%s%%", signo, datos_var_dia$Variacion[i]))
+  )
+})
+
+browsable(
+  div(style = "display:grid; grid-template-columns:1fr 1fr; gap:8px; max-height:100%; overflow-y:auto;",
+      tagList(cajas_dia))
+)
+```
+
+### Cambio porcentual Semanal
+
+```{r}
+library(htmltools)
+
+# Variación porcentual semanal: ((Yt/Yt-1)-1)*100, últimas 4 semanas
+datos_var_semana <- df_semanal %>%
+  mutate(Semana = as.Date(Semana)) %>%
+  arrange(Semana) %>%
+  tail(5) %>%
+  mutate(Variacion = round(((Promedio / lag(Promedio)) - 1) * 100, 2)) %>%
+  filter(!is.na(Variacion))
+
+cajas_semana <- lapply(seq_len(nrow(datos_var_semana)), function(i) {
+  color <- ifelse(datos_var_semana$Variacion[i] >= 0, "#1ee29d", "#ff4d4d")
+  signo <- ifelse(datos_var_semana$Variacion[i] >= 0, "+", "")
+  div(style = sprintf("background:#161b22;border-left:4px solid %s;border-radius:6px;padding:8px 12px;margin-bottom:8px;", color),
+      span(style = "color:#8b949e;font-size:0.75rem;",
+           sprintf("Semana del %s", format(datos_var_semana$Semana[i], "%d/%m/%Y"))),
+      tags$br(),
+      span(style = sprintf("color:%s;font-size:1.1rem;font-weight:700;", color),
+           sprintf("%s%s%%", signo, datos_var_semana$Variacion[i]))
+  )
+})
+
+browsable(tagList(cajas_semana))
+```
+
+# MODELO ECONOMETRICO
+
+La información es de la página: **www.usdtbol.com** misma que especifica que los valores son el promedio de las primeras 5 cotizaciones de la fecha. Los datos recolectados son de la página de P2P de Binance desde hace 1 año.
+
+## Column 1
+### Modelo ARIMA SEMANAL
+```{r}
+library(forecast)
+promedio_por_semana <- df_semanal[order(df_semanal$Semana), ]
+promedio_por_semana <- promedio_por_semana |> 
+  filter(as.Date(Semana) <= as.Date(fecha_cierre))
+
+ts_semana <- ts(promedio_por_semana$Promedio, 
+                start = c(2024, isoweek(min(promedio_por_semana$Semana))), 
+                frequency = 52)
+
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,1,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#35
+ 
+ds2 <- c(0,0,0,0,0,0,0,0,0,0,   1,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#11
+
+ds3 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,1,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#33
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,1,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#59
+
+ds5 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,1,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0, 
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#42
+
+ds6 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,1,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0, 
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#45
+
+ds7 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,1,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0, 
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#37
+
+ds8 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0, 
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,1,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0)#97
+
+d_s1 <- ts(ds1, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+d_s2 <- ts(ds2, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+d_s3 <- ts(ds3, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+d_s4 <- ts(ds4, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+d_s5 <- ts(ds5, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+d_s6 <- ts(ds6, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+d_s7 <- ts(ds7, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+d_s8 <- ts(ds8, start = c(2024, isoweek(min(promedio_por_semana$Semana))), frequency = 52)
+
+exogen <- ts.intersect(d_s1,d_s2,d_s3,d_s4,d_s5,d_s6,d_s7,d_s8)
+ 
+exogen1 <-window(exogen, start = c(2024, isoweek(min(promedio_por_semana$Semana))),
+                 end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+# exogen2
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(1,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+summary(modelo1)
+resid02 <- modelo1$residuals
+jarque.bera.test(resid02)
+shapiro.test(resid02)
+Box.test(resid02, type="Ljung-Box")
+
+```
+
+## Column 2
+### Tabla
+```{r}
+exogen2 <- matrix(0, nrow = 8, ncol = 8)
+
+pronostico <- forecast(modelo1,
+                       h = 8, level = c(20,30,40,50,60,70,80,90,95),
+                       xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+
+pronostico2026 <- pronostico2026 %>% 
+  mutate(Fecha = c("02/AGOST/2026","09/AGOST/2026",
+                   "16/AGOST/2026","23/AGOST/2026","30/AGOST/2026",
+                   "06/SEPT/2026","13/SEPT/2026","20/SEPT/2026")) %>% 
+  select(Fecha, everything())
+
+pronostico2026$Point.Forecast <- round(pronostico2026$Point.Forecast,2)
+pronostico2026$Lo.20 <- round(pronostico2026$Lo.20,2)
+pronostico2026$Hi.20 <- round(pronostico2026$Hi.20,2)
+pronostico2026$Lo.30 <- round(pronostico2026$Lo.30,2)
+pronostico2026$Hi.30 <- round(pronostico2026$Hi.30,2)
+pronostico2026$Lo.40 <- round(pronostico2026$Lo.40,2)
+pronostico2026$Hi.40 <- round(pronostico2026$Hi.40,2)
+pronostico2026$Lo.50 <- round(pronostico2026$Lo.50,2)
+pronostico2026$Hi.50 <- round(pronostico2026$Hi.50,2)
+pronostico2026$Lo.60 <- round(pronostico2026$Lo.60,2)
+pronostico2026$Hi.60 <- round(pronostico2026$Hi.60,2)
+pronostico2026$Lo.70 <- round(pronostico2026$Lo.70,2)
+pronostico2026$Hi.70 <- round(pronostico2026$Hi.70,2)
+pronostico2026$Lo.80 <- round(pronostico2026$Lo.80,2)
+pronostico2026$Hi.80 <- round(pronostico2026$Hi.80,2)
+pronostico2026$Lo.90 <- round(pronostico2026$Lo.90,2)
+pronostico2026$Hi.90 <- round(pronostico2026$Hi.90,2)
+pronostico2026$Lo.95 <- round(pronostico2026$Lo.95,2)
+pronostico2026$Hi.95 <- round(pronostico2026$Hi.95,2)
+
+row.names(pronostico2026) <- NULL
+kable(pronostico2026,
+      caption = "Pronóstico del valor del Dólar USDT para el 2026 - AGOSTO (Semanal)") %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 12) %>%
+  kable_minimal()
+```
+
+### Gráfica
+```{r, fig.width=10, fig.height=6}
+fechas_labels <- c("02 Agosto 26","09 Agosto 26","16 Agosto 26",
+                   "23 Agosto 26","30 Agosto 26","06 Septiembre 26","13 Septiembre 26",
+                   "20 Septiembre 26")
+tiempos_x <- as.numeric(time(pronostico$mean))
+
+autoplot(pronostico) +
+  geom_hline(yintercept = pronostico2026$Lo.95[1], linetype = "dashed",
+             color = "green", size = 1.1) +
+  geom_hline(yintercept = pronostico2026$Point.Forecast[1], linetype = "dashed",
+             color = "#e6edf3", size = 1.1) +
+  geom_hline(yintercept = pronostico2026$Hi.95[1], linetype = "dashed",
+             color = "red", size = 1.1) +
+scale_x_continuous(breaks = tiempos_x, labels = fechas_labels) +
+  coord_cartesian(xlim=c(2026.1,2026.63), ylim=c(8.5,15)) +
+  labs(title = "Proyección del promedio semanal (Bs) del Dólar Blue",
+    subtitle = "Agosto 2026", y = "Promedio Bs", x = "")  + theme_minimal() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(size = 14, face = "bold", color = "#1ee29d", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, color = "#8b949e", hjust = 0.5, margin = margin(b = 10)),
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10),
+    axis.title = element_text(size = 12, face = "bold"),  panel.grid.minor = element_blank())
+```
+
+# COMPORTAMIENTO POR MES
+
+## Column 1 {data-width=700, .tabset}
+
+### LUNES
+```{r}
+dias <- c("lunes.29.jun","lunes.06.jul","lunes.13.jul","lunes.20.jul",
+          "martes.30.jun","martes.07.jul","martes.14.jul","martes.21.jul",
+          "miercoles.01.jul","miercoles.08.jul","miercoles.15.jul","miercoles.22.jul",
+          "jueves.02.jul","jueves.09.jul","jueves.16.jul","jueves.23.jul",
+          "viernes.03.jul","viernes.10.jul","viernes.17.jul","viernes.24.jul",
+          "sabado.04.jul","sabado.11.jul","sabado.18.jul","sabado.25.jul",
+          "domingo.05.jul","domingo.12.jul","domingo.19.jul","domingo.26.jul")
+fechas <- c("2026-06-29","2026-07-06","2026-07-13","2026-07-20",
+            "2026-06-30","2026-07-07","2026-07-14","2026-07-21",
+            "2026-07-01","2026-07-08","2026-07-15","2026-07-22",
+            "2026-07-02","2026-07-09","2026-07-16","2026-07-23",
+            "2026-07-03","2026-07-10","2026-07-17","2026-07-24",
+            "2026-07-04","2026-07-11","2026-07-18","2026-07-25",
+            "2026-07-05","2026-07-12","2026-07-19","2026-07-26")
+
+for (i in 1:length(dias)) {assign(dias[i], df %>% 
+                                    filter(format(fecha, "%Y-%m-%d") == fechas[i]))}
+
+dias <- list(lunes.29.jun,lunes.06.jul,lunes.13.jul,lunes.20.jul)
+dias_nombres <- c("Lunes 29 Junio","Lunes 06 Julio","Lunes 13 Julio","Lunes 20 Julio")
+
+df_semana <- do.call(rbind, dias)
+df_semana$dia <- factor(rep(dias_nombres, sapply(dias, nrow)), levels = dias_nombres)
+df_semana$hora <- as.POSIXct(paste("2026-07-20", format(df_semana$fecha, "%H:%M:%S")))
+library(ggthemes)
+a <- ggplot(df_semana, aes(x = hora, y = (precio))) +
+  geom_line(color="#0D5C63") +
+  geom_point(color="#0D5C63") +
+  geom_smooth(color="#003554",method = "glm", se = TRUE, linetype = "dashed") +
+  labs(title = "", x = "Hora", y = "Valor (Bs.)") +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e"),
+        strip.background = element_rect(fill = "#161b22"),
+        strip.text = element_text(color = "#1ee29d", face = "bold")) +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(date_labels = "%H:%M", breaks = "4 hours") +
+  facet_wrap(~ dia, ncol = 2, scales = "free_y")
+
+a
+
+data_lunes <- df_semana
+```
+
+### MARTES
+
+```{r}
+dias <- list(martes.30.jun,martes.07.jul,martes.14.jul,martes.21.jul)
+dias_nombres <- c("Martes 30 Junio","Martes 07 Julio","Martes 14 Julio","Martes 21 Julio")
+
+df_semana <- do.call(rbind, dias)
+df_semana$dia <- factor(rep(dias_nombres, sapply(dias, nrow)), levels = dias_nombres)
+df_semana$hora <- as.POSIXct(paste("2026-07-21", format(df_semana$fecha, "%H:%M:%S")))
+
+a <- ggplot(df_semana, aes(x = hora, y = (precio))) +
+  geom_line(color="#0D5C63") +
+  geom_point(color="#0D5C63") +
+  geom_smooth(color="#003554",method = "glm", se = TRUE, linetype = "dashed") +
+  labs(title = "", x = "Hora", y = "Valor (Bs.)") +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e"),
+        strip.background = element_rect(fill = "#161b22"),
+        strip.text = element_text(color = "#1ee29d", face = "bold")) +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(date_labels = "%H:%M", breaks = "4 hours") +
+  facet_wrap(~ dia, ncol = 2, scales = "free_y")
+
+a
+
+data_martes <- df_semana
+
+```
+
+### MIERCOLES
+
+```{r}
+dias <- list(miercoles.01.jul,miercoles.08.jul,miercoles.15.jul,miercoles.22.jul)
+dias_nombres <- c("Miercoles 01 Julio","Miercoles 08 Julio","Miercoles 15 Julio",
+                  "Miercoles 22 Julio")
+
+df_semana <- do.call(rbind, dias)
+df_semana$dia <- factor(rep(dias_nombres, sapply(dias, nrow)), levels = dias_nombres)
+df_semana$hora <- as.POSIXct(paste("2026-07-22", format(df_semana$fecha, "%H:%M:%S")))
+
+a <- ggplot(df_semana, aes(x = hora, y = (precio))) +
+  geom_line(color="#0D5C63") +
+  geom_point(color="#0D5C63") +
+  geom_smooth(color="#003554",method = "glm", se = TRUE, linetype = "dashed") +
+  labs(title = "", x = "Hora", y = "Valor (Bs.)") +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e"),
+        strip.background = element_rect(fill = "#161b22"),
+        strip.text = element_text(color = "#1ee29d", face = "bold")) +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(date_labels = "%H:%M", breaks = "4 hours") +
+  facet_wrap(~ dia, ncol = 2, scales = "free_y")
+
+a
+
+data_miercoles <- df_semana
+```
+
+### JUEVES 
+
+```{r}
+dias <- list(jueves.02.jul,jueves.09.jul,jueves.16.jul,jueves.23.jul)
+dias_nombres <- c("Jueves 02 Julio","Jueves 09 Julio","Jueves 16 Julio","Jueves 23 Julio")
+
+df_semana <- do.call(rbind, dias)
+df_semana$dia <- factor(rep(dias_nombres, sapply(dias, nrow)), levels = dias_nombres)
+df_semana$hora <- as.POSIXct(paste("2026-07-23", format(df_semana$fecha, "%H:%M:%S")))
+
+a <- ggplot(df_semana, aes(x = hora, y = (precio))) +
+  geom_line(color="#0D5C63") +
+  geom_point(color="#0D5C63") +
+  geom_smooth(color="#003554",method = "glm", se = TRUE, linetype = "dashed") +
+  labs(title = "", x = "Hora", y = "Valor (Bs.)") +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e"),
+        strip.background = element_rect(fill = "#161b22"),
+        strip.text = element_text(color = "#1ee29d", face = "bold")) +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(date_labels = "%H:%M", breaks = "4 hours") +
+  facet_wrap(~ dia, ncol = 2, scales = "free_y")
+
+a
+
+data_jueves <- df_semana
+```
+
+### VIERNES
+
+```{r}
+dias <- list(viernes.03.jul,viernes.10.jul,viernes.17.jul,viernes.24.jul)
+dias_nombres <- c("Viernes 03 Julio","Viernes 10 Julio","Viernes 17 Julio","Viernes 24 Julio")
+
+df_semana <- do.call(rbind, dias)
+df_semana$dia <- factor(rep(dias_nombres, sapply(dias, nrow)), levels = dias_nombres)
+df_semana$hora <- as.POSIXct(paste("2026-07-24", format(df_semana$fecha, "%H:%M:%S")))
+
+a <- ggplot(df_semana, aes(x = hora, y = (precio))) +
+  geom_line(color="#0D5C63") +
+  geom_point(color="#0D5C63") +
+  geom_smooth(color="#003554",method = "glm", se = TRUE, linetype = "dashed") +
+  labs(title = "", x = "Hora", y = "Valor (Bs.)") +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e"),
+        strip.background = element_rect(fill = "#161b22"),
+        strip.text = element_text(color = "#1ee29d", face = "bold")) +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(date_labels = "%H:%M", breaks = "4 hours") +
+  facet_wrap(~ dia, ncol = 2, scales = "free_y")
+
+a
+
+data_viernes <- df_semana
+```
+
+### SABADO
+
+```{r}
+dias <- list(sabado.04.jul,sabado.11.jul,sabado.18.jul,sabado.25.jul)
+dias_nombres <- c("Sabado 04 Julio","Sabado 11 Julio","Sabado 18 Julio","Sabado 25 Julio")
+
+df_semana <- do.call(rbind, dias)
+df_semana$dia <- factor(rep(dias_nombres, sapply(dias, nrow)), levels = dias_nombres)
+df_semana$hora <- as.POSIXct(paste("2026-07-25", format(df_semana$fecha, "%H:%M:%S")))
+
+a <- ggplot(df_semana, aes(x = hora, y = (precio))) +
+  geom_line(color="#0D5C63") +
+  geom_point(color="#0D5C63") +
+  geom_smooth(color="#003554",method = "glm", se = TRUE, linetype = "dashed") +
+  labs(title = "", x = "Hora", y = "Valor (Bs.)") +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e"),
+        strip.background = element_rect(fill = "#161b22"),
+        strip.text = element_text(color = "#1ee29d", face = "bold")) +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(date_labels = "%H:%M", breaks = "4 hours") +
+  facet_wrap(~ dia, ncol = 2, scales = "free_y")
+
+a
+
+data_sabado <- df_semana
+```
+
+### DOMINGO
+
+```{r}
+dias <- list(domingo.05.jul,domingo.12.jul,domingo.19.jul,domingo.26.jul)
+dias_nombres <- c("Domingo 05 Julio","Domingo 12 Julio","Domingo 19 Julio",
+                  "Domingo 26 Julio")
+
+df_semana <- do.call(rbind, dias)
+df_semana$dia <- factor(rep(dias_nombres, sapply(dias, nrow)), levels = dias_nombres)
+df_semana$hora <- as.POSIXct(paste("2026-07-26", format(df_semana$fecha, "%H:%M:%S")))
+
+a <- ggplot(df_semana, aes(x = hora, y = (precio))) +
+  geom_line(color="#0D5C63") +
+  geom_point(color="#0D5C63") +
+  geom_smooth(color="#003554",method = "glm", se = TRUE, linetype = "dashed") +
+  labs(title = "", x = "Hora", y = "Valor (Bs.)") +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e"),
+        strip.background = element_rect(fill = "#161b22"),
+        strip.text = element_text(color = "#1ee29d", face = "bold")) +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(date_labels = "%H:%M", breaks = "4 hours") +
+  facet_wrap(~ dia, ncol = 2, scales = "free_y")
+
+a
+
+data_domingo <- df_semana
+```
+
+## Column 2 {data-width=700, .tabset}
+### TENDENCIA LUNES
+
+```{r}
+df_tendencia_lunes <- data_lunes %>%
+  mutate(hora_decimal = hour(hora) + minute(hora)/60 + second(hora)/3600)
+
+ggplot(df_tendencia_lunes, aes(x = hora_decimal, y = log(precio))) +
+  geom_point(alpha = 0.7, color = "#1ee29d", size = 1, shape=2) +
+  geom_smooth(method = "loess", span = 0.3, color = "#3AB795", fill = "#3AB795", size = 1.5) +
+  scale_x_continuous(breaks = seq(0, 24, 2),
+    labels = paste0(seq(0, 24, 2), ":00"),
+    limits = c(0, 24)) +
+  labs(title = "Tendencia de Subida y Bajada del Dólar (Ciclo 24h)",
+    x = "Hora del Día", y = NULL) +
+  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_blank(),   # Quita el título "Valor (Bs.)"
+    axis.text.y = element_blank(),    # Quita los números de la escala
+    axis.ticks.y = element_blank(),   # Quita las pequeñas marcas si existieran
+    panel.grid.major.y = element_blank() # Quita las líneas horizontales de fondo
+  )
+
+```
+
+### TENDENCIA MARTES
+
+```{r}
+df_tendencia_martes <- data_martes %>%
+  mutate(hora_decimal = hour(hora) + minute(hora)/60 + second(hora)/3600)
+
+ggplot(df_tendencia_martes, aes(x = hora_decimal, y = log(precio))) +
+  geom_point(alpha = 0.7, color = "#1ee29d", size = 1, shape=2) +
+  geom_smooth(method = "loess", span = 0.3, color = "#3AB795", fill = "#3AB795", size = 1.5) +
+  scale_x_continuous(breaks = seq(0, 24, 2),
+    labels = paste0(seq(0, 24, 2), ":00"),    limits = c(0, 24)) +
+  labs(title = "Tendencia de Subida y Bajada del Dólar (Ciclo 24h)",
+    x = "Hora del Día", y = NULL) +  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_blank(),   # Quita el título "Valor (Bs.)"
+    axis.text.y = element_blank(),    # Quita los números de la escala
+    axis.ticks.y = element_blank(),   # Quita las pequeñas marcas si existieran
+    panel.grid.major.y = element_blank() # Quita las líneas horizontales de fondo
+  )
+```
+
+### TENDENCIA MIERCOLES
+
+```{r}
+df_tendencia_miercoles <- data_miercoles %>%
+  mutate(hora_decimal = hour(hora) + minute(hora)/60 + second(hora)/3600)
+
+ggplot(df_tendencia_miercoles, aes(x = hora_decimal, y = log(precio))) +
+  geom_point(alpha = 0.7, color = "#1ee29d", size = 1, shape=2) +
+  geom_smooth(method = "loess", span = 0.3, color = "#3AB795", fill = "#3AB795", size = 1.5) +
+  scale_x_continuous(breaks = seq(0, 24, 2),
+    labels = paste0(seq(0, 24, 2), ":00"),  limits = c(0, 24)) +
+  labs(title = "Tendencia de Subida y Bajada del Dólar (Ciclo 24h)",
+    x = "Hora del Día", y = NULL) +  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_blank(),   # Quita el título "Valor (Bs.)"
+    axis.text.y = element_blank(),    # Quita los números de la escala
+    axis.ticks.y = element_blank(),   # Quita las pequeñas marcas si existieran
+    panel.grid.major.y = element_blank() # Quita las líneas horizontales de fondo
+  )
+```
+
+### TENDENCIA JUEVES 
+
+```{r}
+df_tendencia_jueves <- data_jueves %>%
+  mutate(hora_decimal = hour(hora) + minute(hora)/60 + second(hora)/3600)
+
+ggplot(df_tendencia_jueves, aes(x = hora_decimal, y = log(precio))) +
+  geom_point(alpha = 0.7, color = "#1ee29d", size = 1, shape=2) +
+  geom_smooth(method = "loess", span = 0.3, color = "#3AB795", fill = "#3AB795", size = 1.5) +
+  scale_x_continuous(breaks = seq(0, 24, 2),
+    labels = paste0(seq(0, 24, 2), ":00"),    limits = c(0, 24)) +
+  labs(title = "Tendencia de Subida y Bajada del Dólar (Ciclo 24h)",
+    x = "Hora del Día", y = NULL) +  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_blank(),   # Quita el título "Valor (Bs.)"
+    axis.text.y = element_blank(),    # Quita los números de la escala
+    axis.ticks.y = element_blank(),   # Quita las pequeñas marcas si existieran
+    panel.grid.major.y = element_blank() # Quita las líneas horizontales de fondo
+  )
+```
+
+### TENDENCIA VIERNES
+
+```{r}
+df_tendencia_viernes <- data_viernes %>%
+  mutate(hora_decimal = hour(hora) + minute(hora)/60 + second(hora)/3600)
+
+ggplot(df_tendencia_viernes, aes(x = hora_decimal, y = log(precio))) +
+  geom_point(alpha = 0.7, color = "#1ee29d", size = 1, shape=2) +
+  geom_smooth(method = "loess", span = 0.3, color = "#3AB795", fill = "#3AB795", size = 1.5) +
+  scale_x_continuous(breaks = seq(0, 24, 2),
+    labels = paste0(seq(0, 24, 2), ":00"),    limits = c(0, 24)) +
+  labs(title = "Tendencia de Subida y Bajada del Dólar (Ciclo 24h)",
+    x = "Hora del Día", y = NULL) +  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_blank(),   # Quita el título "Valor (Bs.)"
+    axis.text.y = element_blank(),    # Quita los números de la escala
+    axis.ticks.y = element_blank(),   # Quita las pequeñas marcas si existieran
+    panel.grid.major.y = element_blank() # Quita las líneas horizontales de fondo
+  )
+```
+
+### TENDENCIA SABADO
+
+```{r}
+df_tendencia_sabado <- data_sabado %>%
+  mutate(hora_decimal = hour(hora) + minute(hora)/60 + second(hora)/3600)
+
+ggplot(df_tendencia_sabado, aes(x = hora_decimal, y = log(precio))) +
+  geom_point(alpha = 0.7, color = "#1ee29d", size = 1, shape=2) +
+  geom_smooth(method = "loess", span = 0.3, color = "#3AB795", fill = "#3AB795", size = 1.5) +
+  scale_x_continuous(breaks = seq(0, 24, 2),
+    labels = paste0(seq(0, 24, 2), ":00"),    limits = c(0, 24)) +
+  labs(title = "Tendencia de Subida y Bajada del Dólar (Ciclo 24h)",
+    x = "Hora del Día", y = NULL) +  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_blank(),   # Quita el título "Valor (Bs.)"
+    axis.text.y = element_blank(),    # Quita los números de la escala
+    axis.ticks.y = element_blank(),   # Quita las pequeñas marcas si existieran
+    panel.grid.major.y = element_blank() # Quita las líneas horizontales de fondo
+  )
+```
+
+### TENDENCIA DOMINGO
+
+```{r}
+df_tendencia_domingo <- data_domingo %>%
+  mutate(hora_decimal = hour(hora) + minute(hora)/60 + second(hora)/3600)
+
+ggplot(df_tendencia_domingo, aes(x = hora_decimal, y = log(precio))) +
+  geom_point(alpha = 0.7, color = "#1ee29d", size = 1, shape=2) +
+  geom_smooth(method = "loess", span = 0.3, color = "#3AB795", fill = "#3AB795", size = 1.5) +
+  scale_x_continuous(breaks = seq(0, 24, 2),
+    labels = paste0(seq(0, 24, 2), ":00"),    limits = c(0, 24)) +
+  labs(title = "Tendencia de Subida y Bajada del Dólar (Ciclo 24h)",
+    x = "Hora del Día", y = NULL) +  theme_dark() +
+  theme(plot.background = element_rect(fill = "#0d1117", color = NA),
+        panel.background = element_rect(fill = "#161b22", color = NA),
+        panel.grid.major = element_line(color = "#21262d"),
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "#e6edf3"),
+        axis.text = element_text(color = "#8b949e")) +
+  theme(plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_blank(),   # Quita el título "Valor (Bs.)"
+    axis.text.y = element_blank(),    # Quita los números de la escala
+    axis.ticks.y = element_blank(),   # Quita las pequeñas marcas si existieran
+    panel.grid.major.y = element_blank() # Quita las líneas horizontales de fondo
+  )
+```
+
+
+# Dolar referencial y Tipo de Cambio Flexible BCB {data-width=300}
+
+El valor referencial del dólar estadounidense para operaciones con el exterior se calcula como: tipo de cambio máximo de venta (TCV) + costo medio variable (CMV) para transferencias al exterior, calculado por la **Autoridad de Supervisión del Sistema Financiero**.
+
+## Column 1
+### Tabla Comparativa
+```{r}
+library(jsonlite)
+library(httr)
+
+fetch_usdtbol_fixed <- function(api_id, col_name) {
+  url <- paste0("https://usdtbol.com/api/", api_id)
+  
+  # Incluimos obligatoriamente el parámetro callback = "cb"
+  res <- GET(
+    url, 
+    query = list(callback = "cb"),
+    add_headers(
+      "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      "Referer"    = "https://usdtbol.com/"
+    )
+  )
+  
+  raw <- content(res, "text", encoding = "UTF-8")
+  
+  # Si el servidor responde "-1", avisar claramente
+  if (trimws(raw) == "-1") {
+    stop(paste("El endpoint", api_id, "devolvió -1. Verifica que el ID del endpoint sea correcto."))
+  }
+  
+  # Limpiar el envoltorio cb(...) -> deja solo el JSON
+  # Remueve 'cb(' del inicio y ')' o ');' del final
+  json_clean <- sub("^^[a-zA-Z0-9_$]+\\((.*)\\);?$", "\\1", raw)
+  # Parsear JSON
+  data <- fromJSON(json_clean)
+  
+  df <- data.frame(
+    fecha = as.POSIXct(data$times, origin = "1970-01-01"),
+    precio = data$list
+  )
+  
+  colnames(df)[2] <- col_name
+  return(df)
+}
+
+# Probamos con las dos series
+#df_serie1 <- fetch_usdtbol_fixed("41j11x65l36h", "paralelo")
+databcb <- fetch_usdtbol_fixed("d5s4yr95l36h", "serie_d5s")
+
+databcb <- databcb %>%
+  mutate(fecha = as.Date(fecha)) %>%
+  complete(fecha = seq(min(fecha), max(fecha), by = "day")) %>%
+  arrange(fecha)
+
+databcb$serie_d5s <- na.approx(databcb$serie_d5s, method = "linear")
+
+# Join por fecha para evitar desfase de longitud por timezone en df_dia$Dia (POSIXct)
+df_dia_filtrado <- df_dia %>%
+  mutate(fecha = as.Date(Dia)) %>%
+  filter(fecha >= as.Date(min(databcb$fecha, na.rm = TRUE)), 
+         fecha <= as.Date(max(databcb$fecha, na.rm = TRUE))) %>%
+  select(fecha, usdt = Promedio)
+
+databcb <- databcb %>%
+  left_join(df_dia_filtrado, by = "fecha")
+
+databcb <- databcb |> 
+  rename(usd_bcb = serie_d5s)
+
+databcb <- databcb |> 
+  transform(usd_bcb = round(usd_bcb,2))
+
+databcb$Brecha <- abs(databcb$usd_bcb - databcb$usdt)
+
+databcb$Estado <- ifelse(databcb$Brecha>=1, "Alta Diferencia",
+                         ifelse(databcb$Brecha<=0.99 & databcb$Brecha>=0.51,
+                                "Moderada","Baja - Casi similares"))
+
+databcb$Brecha <- round(databcb$Brecha,2)
+
+kable(databcb, caption = "Información del BCB y Binance", align = c("l", "c", "c", "c","c"))%>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 13) %>%
+  kable_minimal()
+
+```
+
+## Column 2 {.tabset}
+### Gráfico histórico 
+
+```{r}
+databcb <- databcb %>%
+  mutate(fecha = as.Date(fecha),
+    dia = weekdays(fecha))
+
+# Etiquetas personalizadas
+dias_espanol <- c("Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado")
+databcb$dia <- dias_espanol[wday(databcb$fecha)]
+
+databcb <- databcb %>%
+  mutate(fecha = as.Date(fecha),
+    semana = isoweek(fecha),
+    hover_text = paste0("Día: ", dia, "<br>Estado: ", Estado))
+
+semanas_unicas <- unique(databcb$semana)
+shapes <- lapply(seq_along(semanas_unicas), function(i) {
+  if (i %% 2 == 0) { # Solo sombreamos semanas pares para crear el efecto de cebra
+    dias_semana <- databcb[databcb$semana == semanas_unicas[i], "fecha"]
+    list(type = "rect",
+      fillcolor = "gray", opacity = 0.1,
+      line = list(width = 0),
+      x0 = min(dias_semana) - 0.5, x1 = max(dias_semana) + 0.5,
+      xref = "x", y0 = 0, y1 = 1, yref = "paper")
+  }
+})
+
+
+plot_ly(data = databcb, x = ~fecha) %>%
+  add_trace(y = ~usd_bcb, name = 'USD BCB', 
+            type = 'scatter', mode = 'lines+markers',
+            text = ~hover_text,
+            hovertemplate = "<b>USD BCB: %{y}</b><br>%{text}<extra></extra>",
+            line = list(color = '#2b93ff'),          # Azul más brillante para modo oscuro
+            marker = list(color = '#2b93ff')) %>%
+  add_trace(y = ~usdt, name = 'USDT', 
+            type = 'scatter', mode = 'lines+markers',
+            text = ~hover_text,
+            hovertemplate = "<b>USDT: %{y}</b><br>%{text}<extra></extra>",
+            line = list(color = '#ff9f43'),          # Naranja más brillante para modo oscuro
+            marker = list(color = '#ff9f43')) %>%
+  layout(
+    title = list(
+      text = "Evolución de Tipos de Cambio",
+      font = list(color = '#ffffff')                 # Título en blanco
+    ),
+    xaxis = list(
+      title = "",
+      titlefont = list(color = '#ffffff'),
+      tickfont = list(color = '#b3b3b3'),
+      gridcolor = '#333333',                         # Líneas de cuadrícula sutiles
+      linecolor = '#555555'                          # Línea del eje
+    ),
+    yaxis = list(
+      title = "Bs/USD",
+      titlefont = list(color = '#ffffff'),
+      tickfont = list(color = '#b3b3b3'),
+      gridcolor = '#333333',
+      linecolor = '#555555'
+    ),
+    hovermode = "x unified",
+    hoverlabel = list(
+      bgcolor = '#222222',                           # Fondo del cuadro flotante
+      font = list(color = '#ffffff', size = 13)       # Texto del cuadro flotante
+    ),
+    legend = list(
+      font = list(color = '#ffffff'),                # Texto de la leyenda en blanco
+      bgcolor = 'rgba(0,0,0,0)'                      # Leyenda con fondo transparente
+    ),
+    paper_bgcolor = '#121212',                       # Fondo de la app/página (Gris muy oscuro)
+    plot_bgcolor = '#1e1e1e',                        # Fondo del área del gráfico
+    shapes = shapes
+  )
+```
+
+### Variacion por dia
+```{r}
+databcb_var <- databcb %>%
+  arrange(fecha) %>%
+  mutate(
+    Var_BCB  = round(((usd_bcb / lag(usd_bcb)) - 1) * 100, 2),
+    Var_USDT = round(((usdt / lag(usdt)) - 1) * 100, 2),
+    hover_var = paste0("Día: ", dia, "<br>Semana: ", semana)
+  )
+
+plot_ly(data = databcb_var, x = ~fecha) %>%
+  add_trace(y = ~Var_BCB, name = 'Variación USD BCB (%)',
+            type = 'scatter', mode = 'lines+markers',
+            fill = 'tozeroy',
+            fillcolor = 'rgba(43,147,255,0.15)',
+            text = ~hover_var,
+            hovertemplate = "<b>Var. USD BCB: %{y}%</b><br>%{text}<extra></extra>",
+            line = list(color = '#2b93ff'),
+            marker = list(color = '#2b93ff')) %>%
+  add_trace(y = ~Var_USDT, name = 'Variación USDT (%)',
+            type = 'scatter', mode = 'lines+markers',
+            fill = 'tozeroy',
+            fillcolor = 'rgba(255,159,67,0.15)',
+            text = ~hover_var,
+            hovertemplate = "<b>Var. USDT: %{y}%</b><br>%{text}<extra></extra>",
+            line = list(color = '#ff9f43'),
+            marker = list(color = '#ff9f43')) %>%
+  layout(
+    title = list(
+      text = "Variación Diaria (%)",
+      font = list(color = '#ffffff')
+    ),
+    xaxis = list(
+      title = "",
+      titlefont = list(color = '#ffffff'),
+      tickfont = list(color = '#b3b3b3'),
+      gridcolor = '#333333',
+      linecolor = '#555555'
+    ),
+    yaxis = list(
+      title = "% Variación",
+      titlefont = list(color = '#ffffff'),
+      tickfont = list(color = '#b3b3b3'),
+      gridcolor = '#333333',
+      linecolor = '#555555'
+    ),
+    hovermode = "x unified",
+    hoverlabel = list(
+      bgcolor = '#222222',
+      font = list(color = '#ffffff', size = 13)
+    ),
+    legend = list(
+      font = list(color = '#ffffff'),
+      bgcolor = 'rgba(0,0,0,0)'
+    ),
+    paper_bgcolor = '#121212',
+    plot_bgcolor = '#1e1e1e',
+    shapes = shapes
+  )
+```
+
+# Bancos Comerciales {data-width=600}
+
+El valor se obtiene mediante la información del **Banco Central de Bolivia (BCB)**, por medio de los reportes de la **Entidad Intermediaria Financiera (EIF).**
+
+## Column 1 { .tabset}
+### Compra - Tipo de cambio Flexible
+```{r}
+library(rvest)
+library(dplyr)
+library(stringr)
+library(tidyr)
+
+url_tabla <- "https://www.bcb.gob.bo/tco_evolutivo.php"
+
+# --- 1. Descargar y parsear el HTML -----------------------------------
+pagina <- read_html(url_tabla)
+
+# --- 2. Ubicar la tabla (clase "bcb-table") ----------------------------
+tabla_nodo <- pagina |> html_element("table.bcb-table")
+
+# Fallback por si el sitio cambia la clase: toma la primera tabla que
+# contenga la palabra "Entidad Bancaria" en el encabezado
+if (is.na(tabla_nodo)) {
+  tablas <- pagina |> html_elements("table")
+  tabla_nodo <- tablas[
+    sapply(tablas, function(t) {
+      any(str_detect(html_text(html_elements(t, "th")), "Entidad Bancaria"))
+    })
+  ][[1]]
+}
+
+# --- 3. Convertir a data frame -----------------------------------------
+tco <- tabla_nodo |> html_table(fill = TRUE)
+
+# --- 4. Limpieza: nombres de columnas y formato de numeros -------------
+# El BCB usa coma decimal y "-" para "sin dato"
+names(tco)[1] <- "Entidad_Bancaria"
+
+tco_limpio <- tco |>
+  mutate(across(
+    -Entidad_Bancaria,
+    ~ na_if(str_trim(.x), "\u2014") |>          # guion largo "—"
+      str_replace_all("\\.", "") |>              # por si hay separador de miles
+      str_replace_all(",", ".") |>               # coma decimal -> punto
+      as.numeric()
+  ))
+
+
+library(tidyverse)
+library(heatmaply)
+
+# 1. Matriz original con valores reales
+matriz_original <- tco_limpio %>%
+  column_to_rownames("Entidad_Bancaria") %>%
+  as.matrix()
+
+# 2. Matriz estandarizada por columna (para los colores de cada fecha)
+matriz_color <- apply(matriz_original, 2, function(x) {
+  if (all(is.na(x))) return(x)
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+})
+
+# Para matriz_original
+rownames(matriz_original)[rownames(matriz_original) == "BANCO DE LA NACIÃ\u0093N ARGENTINA"] <- "BANCO DE LA NACION ARGENTINA"
+
+# Para matriz_color
+rownames(matriz_color)[rownames(matriz_color) == "BANCO DE LA NACIÃ\u0093N ARGENTINA"] <- "BANCO DE LA NACION ARGENTINA"
+
+# 3. Heatmap interactivo (paleta oscura acorde a estilos2026.css)
+heatmaply(
+  matriz_color,                 # Usa la matriz 0-1 para los colores
+  cellnote = matriz_original,   # Escribe los valores REALES dentro de los cuadros
+  cellnote_size = 10,
+  custom_hovertext = matriz_original, # Muestra el valor REAL en el tooltip flotante
+  dendrogram = "none",
+  xlab = "",
+  ylab = "",
+  main = "Tipo de Cambio Oficial - Compra (Bs/$us)",
+  colors = colorRampPalette(c("#0d1117", "#537D8D", "#1ee29d"))(100),
+  na.value = "#161b22",
+  grid_color = "#30363d",
+  fontsize_row = 9,
+  fontsize_col = 9
+) %>%
+  layout(
+    paper_bgcolor = "#0d1117",
+    plot_bgcolor  = "#0d1117",
+    font = list(color = "#e6edf3"),
+    title = list(font = list(color = "#e6edf3"))
+  )
+
+
+```
+
+### Montos por Entidad Financiera
+
+```{r}
+url_tabla <- "https://www.bcb.gob.bo/tco_evolutivo.php"
+
+# --- 1. Descargar y parsear el HTML -------------------------------------
+pagina <- read_html(url_tabla)
+
+# --- 2. Funcion generica: extraer una tabla bcb-table por su titulo -----
+extraer_tabla_bcb <- function(pagina, texto_titulo) {
+  # Todos los titulos de seccion
+  titulos <- pagina |> html_elements("div.bcb-title")
+
+  idx <- which(str_detect(html_text(titulos, trim = TRUE), fixed(texto_titulo)))
+
+  if (length(idx) == 0) {
+    stop("No se encontro ninguna seccion cuyo titulo contenga: '", texto_titulo, "'")
+  }
+
+  # El contenedor bcb-scroller (con la tabla) es el hermano siguiente
+  # del div.bcb-title correspondiente
+  titulo_nodo <- titulos[[idx[1]]]
+  tabla_nodo  <- titulo_nodo |>
+    html_elements(xpath = "following-sibling::div[contains(@class,'bcb-scroller')][1]//table")
+
+  if (length(tabla_nodo) == 0) {
+    stop("Se encontro el titulo pero no la tabla asociada.")
+  }
+
+  tabla_nodo[[1]] |> html_table(fill = TRUE)
+}
+
+# --- 3. Extraer la tabla "Montos transados" ------------------------------
+montos <- extraer_tabla_bcb(pagina, "Montos transados")
+
+names(montos)[1] <- "Entidad_Bancaria"
+
+# --- 4. Limpieza de numeros -----------------------------------------------
+# Aqui el separador de miles es el punto (".") y no hay coma decimal,
+# ademas de "-" para "sin dato"
+montos_limpio <- montos |>
+  mutate(across(
+    -Entidad_Bancaria,
+    ~ na_if(str_trim(.x), "\u2014") |>          # guion largo "—"
+      str_replace_all("\\.", "") |>              # quitar separador de miles
+      as.numeric()
+  ))
+
+# 1. Matriz original con valores reales
+matriz_original <- montos_limpio %>%
+  column_to_rownames("Entidad_Bancaria") %>%
+  as.matrix()
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(lubridate)
+
+df_burbujas <- matriz_original %>%
+  as.data.frame() %>%                          # <-- Se añade esta conversión aquí
+  tibble::rownames_to_column(var = "Banco") %>%
+  mutate(Banco = iconv(Banco, to = "UTF-8")) %>%
+  mutate(Banco = str_replace(Banco, "NACI.*N", "NACIÓN")) %>%
+  filter(Banco != "BANCOS (MONTOS TOTALES)") %>%
+  pivot_longer(
+    cols = -Banco, 
+    names_to = "Fecha_str", 
+    values_to = "Monto"
+  ) %>%
+  mutate(
+    Monto = as.numeric(Monto),
+    Fecha = dmy(paste0(Fecha_str, "-2026"))    # Sin locale para mayor compatibilidad
+  ) %>%
+  filter(!is.na(Monto) & Monto > 0) %>%
+  arrange(Banco, Fecha)
+
+library(highcharter)
+
+# Highcharts requiere map de categorías a índices numéricos (0, 1, 2...)
+bancos_hc <- sort(unique(df_burbujas$Banco))
+bancos_hc <- str_replace(bancos_hc, "BANCO DE LA NACI.*", "BANCO DE LA NACION ARGENTINA")
+
+df_hc_burbujas <- df_burbujas %>%
+  mutate(
+    Fecha_ms = datetime_to_timestamp(Fecha),
+    Banco_id = as.numeric(factor(Banco, levels = bancos_hc)) - 1
+  )
+
+
+df_hc_burbujas <- df_hc_burbujas %>%
+  mutate(Banco = str_replace(Banco, "BANCO DE LA NACI.*", "BANCO DE LA NACION ARGENTINA"))
+
+g_burbujas_hc <- hchart(
+  df_hc_burbujas, 
+  "bubble", 
+  hcaes(x = Fecha_ms, y = Banco_id, size = Monto, group = Banco)
+) %>%
+  hc_chart(backgroundColor = "#0d1117") %>%
+  hc_title(
+    text = "Matriz de Burbujas: Montos por Entidad Financiera",
+    style = list(color = "#e6edf3", fontWeight = "bold", fontFamily = "Segoe UI, sans-serif", fontSize = "16px")
+  ) %>%
+  hc_xAxis(
+    type = "datetime",
+    title = list(text = "", style = list(color = "#e6edf3")),
+    labels = list(style = list(color = "#b3b3b3")),
+    dateTimeLabelFormats = list(day = "%d-%b"),
+    gridLineWidth = 1,
+    gridLineColor = "#21262d",
+    lineColor = "#30363d"
+  ) %>%
+  hc_yAxis(
+    title = list(text = "", style = list(color = "#e6edf3")),
+    labels = list(style = list(color = "#b3b3b3")),
+    categories = bancos_hc,
+    tickInterval = 1,
+    min = 0,
+    max = length(bancos_hc) - 1,
+    gridLineWidth = 1,
+    gridLineColor = "#21262d",
+    lineColor = "#30363d"
+  ) %>%
+  hc_plotOptions(
+    bubble = list(
+      minSize = "3%",
+      maxSize = "15%",
+      marker = list(fillOpacity = 0.7)
+    )
+  ) %>%
+  hc_tooltip(
+    useHTML = TRUE,
+    headerFormat = "",
+    pointFormat = "<b>{point.series.name}</b><br>Fecha: {point.x:%d-%b-%Y}<br>Monto: <b>Bs. {point.z:,.0f}</b>",
+    backgroundColor = "#161b22",
+    style = list(color = "#e6edf3")
+  ) %>%
+  hc_legend(enabled = FALSE) %>%
+  hc_add_theme(hc_theme_darkunica()) %>%
+  hc_colors(c("#1ee29d", "#537D8D", "#2b93ff", "#ff9f43", "#ff4d4d",
+              "#7CFC00", "#c792ea", "#f78c6c", "#82aaff", "#89ddff"))
+
+g_burbujas_hc
+
+
+```
+
+
+### Número de Transacciones
+
+```{r}
+url_tabla <- "https://www.bcb.gob.bo/tco_evolutivo.php"
+
+# --- 1. Descargar y parsear el HTML -------------------------------------
+# Se fuerza encoding UTF-8 explicitamente para evitar problemas con tildes
+pagina <- read_html(url_tabla, encoding = "UTF-8")
+
+# --- 2. Funcion generica: extraer una tabla bcb-table por su titulo -----
+# La comparacion se hace SIN tildes/acentos para evitar fallos por
+# encoding (da igual si "texto_titulo" o el HTML traen "Número" o "Numero")
+quitar_tildes <- function(x) {
+  stringi::stri_trans_general(x, "Latin-ASCII")
+}
+
+extraer_tabla_bcb <- function(pagina, texto_titulo) {
+  titulos      <- pagina |> html_elements("div.bcb-title")
+  titulos_text <- html_text(titulos, trim = TRUE) |> quitar_tildes() |> str_to_lower()
+
+  patron <- texto_titulo |> quitar_tildes() |> str_to_lower()
+
+  idx <- which(str_detect(titulos_text, fixed(patron)))
+
+  if (length(idx) == 0) {
+    stop(
+      "No se encontro ninguna seccion cuyo titulo contenga: '", texto_titulo, "'.\n",
+      "Titulos disponibles en la pagina:\n",
+      paste("  -", html_text(titulos, trim = TRUE), collapse = "\n")
+    )
+  }
+
+  titulo_nodo <- titulos[[idx[1]]]
+  tabla_nodo  <- titulo_nodo |>
+    html_elements(xpath = "following-sibling::div[contains(@class,'bcb-scroller')][1]//table")
+
+  if (length(tabla_nodo) == 0) {
+    stop("Se encontro el titulo pero no la tabla asociada.")
+  }
+
+  tabla_nodo[[1]] |> html_table(fill = TRUE)
+}
+
+# --- 3. Extraer la tabla "Numero de Transacciones" ------------------------
+transacciones <- extraer_tabla_bcb(pagina, "Numero de Transacciones")
+
+names(transacciones)[1] <- "Entidad_Bancaria"
+
+# --- 4. Limpieza de numeros -------------------------------------------------
+# Son conteos enteros; el separador de miles es el punto (".") y
+# "-" / "—" significa "sin dato"
+transacciones_limpio <- transacciones |>
+  mutate(across(
+    -Entidad_Bancaria,
+    ~ na_if(str_trim(.x), "\u2014") |>          # guion largo "—"
+      str_replace_all("\\.", "") |>              # quitar separador de miles
+      as.integer()
+  ))
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(lubridate)
+
+df_heatmap <- transacciones_limpio %>%
+  # Corregimos codificación por si quedó truncado el nombre de Nación Argentina
+  mutate(Entidad_Bancaria = str_replace(Entidad_Bancaria, "NACI.*N", "NACIÓN")) %>%
+  # Excluimos la fila de totales
+  filter(!str_detect(Entidad_Bancaria, "TOTALES|NÚMERO DE TRAN")) %>%
+  # Pivotamos de formato ancho a largo
+  pivot_longer(
+    cols = -Entidad_Bancaria,
+    names_to = "Fecha_str",
+    values_to = "Transacciones"
+  ) %>%
+  mutate(
+    Transacciones = as.numeric(Transacciones),
+    Fecha = dmy(paste0(Fecha_str, "-2026"))
+  ) %>%
+  # Reemplazamos NAs con 0 para que la matriz del heatmap no tenga huecos vacíos
+  mutate(Transacciones = ifelse(is.na(Transacciones), 0, Transacciones)) %>%
+  arrange(Entidad_Bancaria, Fecha)
+
+library(plotly)
+library(dplyr)
+
+# 1. Preparación de datos con normalización por fila (Banco)
+bancos_ord <- sort(unique(df_heatmap$Entidad_Bancaria), decreasing = TRUE)
+bancos_ord <- str_replace(bancos_ord, "BANCO DE LA NACI.*", "BANCO DE LA NACION ARGENTINA")
+
+library(dplyr)
+library(stringr)
+
+df_heatmap_p <- df_heatmap %>%
+  mutate(Entidad_Bancaria = str_replace(Entidad_Bancaria, "BANCO DE LA NACI.*", "BANCO DE LA NACION ARGENTINA"))
+
+
+library(dplyr)
+library(plotly)
+
+# 1. Preprocesamiento: calcular el valor relativo (0 a 1) por fila/banco
+df_heatmap_p <- df_heatmap_p %>%
+  group_by(Entidad_Bancaria) %>%
+  mutate(
+    # Usamos case_when para evitar el problema de tamaños de vector
+    valor_relativo = case_when(
+      max(Transacciones, na.rm = TRUE) == min(Transacciones, na.rm = TRUE) ~ 0.5,
+      TRUE ~ (Transacciones - min(Transacciones, na.rm = TRUE)) / 
+             (max(Transacciones, na.rm = TRUE) - min(Transacciones, na.rm = TRUE))
+    )
+  ) %>%
+  ungroup()
+
+# 2. Definir la paleta de degradado oscura (acorde a estilos2026.css)
+paleta_verde <- list(
+  c(0, "#0d1117"),   # Valor mínimo del banco -> Fondo oscuro
+  c(1, "#1ee29d")    # Valor máximo del banco -> Verde primario
+)
+
+# 3. Construcción del gráfico con el degradado relativo
+heatmap_plotly <- plot_ly(
+  data = df_heatmap_p,
+  x = ~Fecha,
+  y = ~Entidad_Bancaria,
+  z = ~valor_relativo,       # Mapeamos el color con la escala relativa (0 a 1)
+  type = "heatmap",
+  colorscale = paleta_verde, # Escala de degradado verde/blanco
+  showscale = FALSE,         # Oculta la leyenda lateral
+  xgap = 1.5,
+  ygap = 1.5,
+  hoverongaps = FALSE,
+  text = ~paste0(
+    "<b>Banco: </b>", Entidad_Bancaria, "<br>",
+    "<b>Fecha: </b>", format(Fecha, "%d-%b-%Y"), "<br>",
+    "<b>Transacciones: </b>", format(Transacciones, big.mark = ",")
+  ),
+  hoverinfo = "text"
+) %>%
+  # Mostramos el valor REAL de transacciones dentro del recuadro
+  add_annotations(
+    x = ~Fecha,
+    y = ~Entidad_Bancaria,
+    text = ~ifelse(Transacciones == 0 | is.na(Transacciones), "", format(Transacciones, big.mark = ",")),
+    showarrow = FALSE,
+    font = list(
+      size = 9,
+      color = "#e6edf3",
+      family = "Segoe UI, sans-serif"
+    )
+  ) %>%
+  layout(
+    title = list(
+      text = "<b>Mapa de Calor: Transacciones (Degradado Relativo por Banco)</b>",
+      font = list(family = "Segoe UI, sans-serif", size = 16, color = "#e6edf3")
+    ),
+    xaxis = list(
+      title = "",
+      type = "date",
+      tickformat = "%d-%b",
+      tickfont = list(color = "#b3b3b3"),
+      showgrid = FALSE
+    ),
+    yaxis = list(
+      title = "",
+      tickfont = list(color = "#b3b3b3"),
+      showgrid = FALSE
+    ),
+    paper_bgcolor = "#0d1117",
+    plot_bgcolor = "#0d1117",
+    margin = list(l = 220, b = 50)
+  )
+
+heatmap_plotly
+
+```
+
+# MODELO DIARIO (TENTATIVO)
+
+La información es de la página: **www.usdtbol.com** misma que especifica que los valores son el promedio de las primeras 5 cotizaciones de la fecha. Los datos recolectados son de la página de P2P de Binance desde hace 1 año.
+
+## Column 1
+### Modelo ARIMA DIARIO
+```{r}
+df_dia <- df_dia %>%
+  mutate(Detalle = case_when(wday(Dia) == 1 ~ "Domingo",
+                             wday(Dia) == 2 ~ "Lunes",
+                             wday(Dia) == 3 ~ "Martes",
+                             wday(Dia) == 4 ~ "Miércoles",
+                             wday(Dia) == 5 ~ "Jueves",
+                             wday(Dia) == 6 ~ "Viernes",
+                             wday(Dia) == 7 ~ "Sábado"))
+
+df.monday <- df_dia %>% 
+  filter(Detalle=="Lunes" & as.Date(Dia) <= as.Date(fecha_cierre))
+
+df.Tuesday <- df_dia %>% 
+  filter(Detalle=="Martes" & as.Date(Dia) <= as.Date(fecha_cierre))
+df.Wednesday <- df_dia %>% 
+  filter(Detalle=="Miércoles" & as.Date(Dia) <= as.Date(fecha_cierre))
+df.Thursday <- df_dia %>% 
+  filter(Detalle=="Jueves" & as.Date(Dia) <= as.Date(fecha_cierre))
+df.friday <- df_dia %>% 
+  filter(Detalle=="Viernes" & as.Date(Dia) <= as.Date(fecha_cierre))
+df.saturday <- df_dia %>% 
+  filter(Detalle=="Sábado" & as.Date(Dia) <= as.Date(fecha_cierre))
+df.sunday <- df_dia %>% 
+  filter(Detalle=="Domingo" & as.Date(Dia) <= as.Date(fecha_cierre))
+
+ts_semana <- ts(df.monday$Promedio, 
+                start = c(2025, 7), 
+                frequency = 52)
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,1,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#14
+
+ds2 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,1,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#27
+
+ds3 <- c(0,0,0,0,0,0,0,0,0,0,   1,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#11
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,1,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#37
+
+ds5 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,1,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#15
+
+ds6 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,1,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#36
+
+ds7 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,1,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#19
+
+ds8 <- c(0,0,0,0,0,0,0,0,1,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#9
+
+d_s1 <- ts(ds1, start = c(2025,7), frequency = 52)
+d_s2 <- ts(ds2, start = c(2025,7), frequency = 52)
+d_s3 <- ts(ds3, start = c(2025,7), frequency = 52)
+d_s4 <- ts(ds4, start = c(2025,7), frequency = 52)
+d_s5 <- ts(ds5, start = c(2025,7), frequency = 52)
+d_s6 <- ts(ds6, start = c(2025,7), frequency = 52)
+d_s7 <- ts(ds7, start = c(2025,7), frequency = 52)
+d_s8 <- ts(ds8, start = c(2025,7), frequency = 52)
+
+exogen <- ts.intersect(d_s1,d_s2,d_s3,d_s4)
+
+exogen1 <-window(exogen, start = c(2025, 7), end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+# exogen2
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(0,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+# summary(modelo1)
+# resid02 <- modelo1$residuals
+# jarque.bera.test(resid02)
+# shapiro.test(resid02)
+# Box.test(resid02, type="Ljung-Box")
+
+exogen2 <- matrix(0, nrow = 4, ncol = 4)
+
+pronostico <- forecast(modelo1,
+                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+pronostico_lunes <- pronostico2026$Point.Forecast[1]
+
+######################
+ts_semana <- ts(df.Tuesday$Promedio, 
+                start = c(2025, 15), # 47 para indicar la semana final exacta
+                frequency = 52)
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,1,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#22
+
+ds2 <- c(0,0,0,0,0,0,0,0,1,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#9
+
+ds3 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,1,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#15
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,1,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#12
+
+ds5 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,1,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#30
+
+ds6 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,1,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#13
+
+ds7 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,1,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#23
+
+ds8 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,1,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#29
+
+ds9 <- c(0,0,0,0,0,0,0,0,0,0,   1,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,     0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0)#11
+
+d_s1 <- ts(ds1, start = c(2025,15), frequency = 52)
+d_s2 <- ts(ds2, start = c(2025,15), frequency = 52)
+d_s3 <- ts(ds3, start = c(2025,15), frequency = 52)
+d_s4 <- ts(ds4, start = c(2025,15), frequency = 52)
+d_s5 <- ts(ds5, start = c(2025,15), frequency = 52)
+d_s6 <- ts(ds6, start = c(2025,15), frequency = 52)
+d_s7 <- ts(ds7, start = c(2025,15), frequency = 52)
+d_s8 <- ts(ds8, start = c(2025,15), frequency = 52)
+d_s9 <- ts(ds9, start = c(2025,15), frequency = 52)
+
+exogen <- ts.intersect(d_s1,d_s2,d_s3,d_s4)
+
+exogen1 <-window(exogen, start = c(2025, 15), end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(0,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+# summary(modelo1)
+# resid02 <- modelo1$residuals
+# jarque.bera.test(resid02)
+# shapiro.test(resid02)
+# Box.test(resid02, type="Ljung-Box")
+
+exogen2 <- matrix(0, nrow = 4, ncol = 4)
+
+pronostico <- forecast(modelo1,
+                        h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                        xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+pronostico_martes <- pronostico2026$Point.Forecast[1]
+
+
+######################
+ts_semana <- ts(df.Wednesday$Promedio, 
+                start = c(2025, 4), # 47 para indicar la semana final exacta
+                frequency = 52)
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,1,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#18
+
+ds2 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,1,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#16
+
+ds3 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,1,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#23
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,1,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#40
+
+ds5 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,1,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#26
+
+ds6 <- c(0,0,0,0,1,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#5
+
+ds7 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,1,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#39
+
+
+d_s1 <- ts(ds1, start = c(2025,4), frequency = 52)
+d_s2 <- ts(ds2, start = c(2025,4), frequency = 52)
+d_s3 <- ts(ds3, start = c(2025,4), frequency = 52)
+d_s4 <- ts(ds4, start = c(2025,4), frequency = 52)
+d_s5 <- ts(ds5, start = c(2025,4), frequency = 52)
+d_s6 <- ts(ds6, start = c(2025,4), frequency = 52)
+d_s7 <- ts(ds7, start = c(2025,4), frequency = 52)
+
+exogen <- ts.intersect(d_s1,d_s2)
+
+exogen1 <-window(exogen, start = c(2025, 4), end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(0,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+# summary(modelo1)
+# resid02 <- modelo1$residuals
+# jarque.bera.test(resid02)
+# shapiro.test(resid02)
+# Box.test(resid02, type="Ljung-Box")
+
+exogen2 <- matrix(0, nrow = 4, ncol = 2)
+
+pronostico <- forecast(modelo1,
+                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+pronostico_miercoles <- pronostico2026$Point.Forecast[1]
+
+####################
+ts_semana <- ts(df.Thursday$Promedio, 
+                start = c(2025, 9), # 47 para indicar la semana final exacta
+                frequency = 52)
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,1,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#16
+
+ds2 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      1,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#21
+
+ds3 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,1,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#19
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,1,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#34
+
+ds5 <- c(0,0,0,0,0,0,1,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#7
+
+ds6 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,1,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#14
+
+ds7 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,1,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#25
+
+ds8 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,1,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#40
+
+ds9 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    1,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#71
+
+ds10 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,1,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#18
+
+ds11 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,1,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#13
+
+d_s1 <- ts(ds1, start = c(2025,9), frequency = 52)
+d_s2 <- ts(ds2, start = c(2025,9), frequency = 52)
+d_s3 <- ts(ds3, start = c(2025,9), frequency = 52)
+d_s4 <- ts(ds4, start = c(2025,9), frequency = 52)
+d_s5 <- ts(ds5, start = c(2025,9), frequency = 52)
+d_s6 <- ts(ds6, start = c(2025,9), frequency = 52)
+d_s7 <- ts(ds7, start = c(2025,9), frequency = 52)
+d_s8 <- ts(ds8, start = c(2025,9), frequency = 52)
+d_s9 <- ts(ds9, start = c(2025,9), frequency = 52)
+d_s10 <- ts(ds10, start = c(2025,9), frequency = 52)
+d_s11 <- ts(ds11, start = c(2025,9), frequency = 52)
+
+exogen <- ts.intersect(d_s1,d_s2)
+
+exogen1 <-window(exogen, start = c(2025, 9), end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(0,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+
+# summary(modelo1)
+# resid02 <- modelo1$residuals
+# jarque.bera.test(resid02)
+# shapiro.test(resid02)
+# Box.test(resid02, type="Ljung-Box")
+
+exogen2 <- matrix(0, nrow = 4, ncol = 2)
+
+pronostico <- forecast(modelo1,
+                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+pronostico_jueves <- pronostico2026$Point.Forecast[1]
+
+######################
+ts_semana <- ts(df.friday$Promedio, 
+                start = c(2025, 12), # 47 para indicar la semana final exacta
+                frequency = 52)
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,1,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#10
+
+ds2 <- c(0,0,1,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#3
+
+ds3 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,1,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#18
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,1,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#30
+
+ds5 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,1,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#68
+
+ds6 <- c(0,0,0,0,0,1,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#6
+
+ds7 <- c(0,0,0,0,0,0,0,0,1,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#9
+
+ds8 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,1,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#23
+
+ds9 <- c(0,0,0,0,0,0,0,1,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#8
+
+d_s1 <- ts(ds1, start = c(2025,12), frequency = 52)
+d_s2 <- ts(ds2, start = c(2025,12), frequency = 52)
+d_s3 <- ts(ds3, start = c(2025,12), frequency = 52)
+d_s4 <- ts(ds4, start = c(2025,12), frequency = 52)
+d_s5 <- ts(ds5, start = c(2025,12), frequency = 52)
+d_s6 <- ts(ds6, start = c(2025,12), frequency = 52)
+d_s7 <- ts(ds7, start = c(2025,12), frequency = 52)
+d_s8 <- ts(ds8, start = c(2025,12), frequency = 52)
+d_s9 <- ts(ds9, start = c(2025,12), frequency = 52)
+
+exogen <- ts.intersect(d_s1)
+
+exogen1 <-window(exogen, start = c(2025, 12), end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(0,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+# summary(modelo1)
+# resid02 <- modelo1$residuals
+# jarque.bera.test(resid02)
+# shapiro.test(resid02)
+# Box.test(resid02, type="Ljung-Box")
+
+
+exogen2 <- matrix(0, nrow = 4, ncol = 1)
+
+pronostico <- forecast(modelo1,
+                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+pronostico_viernes <- pronostico2026$Point.Forecast[1]
+
+######################
+ts_semana <- ts(df.saturday$Promedio, 
+                start = c(2025, 8), # 47 para indicar la semana final exacta
+                frequency = 52)
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,1,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#13
+
+ds2 <- c(0,0,0,0,0,0,0,0,0,0,   1,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#11
+
+ds3 <- c(0,0,0,0,1,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#5
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,1,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#22
+
+ds5 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,1,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#34
+
+ds6 <- c(0,0,0,0,0,0,0,0,0,1,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#10
+
+ds7 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,1,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0)#26
+
+d_s1 <- ts(ds1, start = c(2025,8), frequency = 52)
+d_s2 <- ts(ds2, start = c(2025,8), frequency = 52)
+d_s3 <- ts(ds3, start = c(2025,8), frequency = 52)
+d_s4 <- ts(ds4, start = c(2025,8), frequency = 52)
+d_s5 <- ts(ds5, start = c(2025,8), frequency = 52)
+d_s6 <- ts(ds6, start = c(2025,8), frequency = 52)
+d_s7 <- ts(ds7, start = c(2025,8), frequency = 52)
+
+exogen <- ts.intersect(d_s1,d_s2)
+
+exogen1 <-window(exogen, start = c(2025, 8), end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(0,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+# summary(modelo1)
+# resid02 <- modelo1$residuals
+# jarque.bera.test(resid02)
+# shapiro.test(resid02)
+# Box.test(resid02, type="Ljung-Box")
+
+exogen2 <- matrix(0, nrow = 4, ncol = 2)
+
+pronostico <- forecast(modelo1,
+                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+pronostico_sabado <- pronostico2026$Point.Forecast[1]
+
+######################
+ts_semana <- ts(df.sunday$Promedio, 
+                start = c(2025, 12), # 47 para indicar la semana final exacta
+                frequency = 52)
+
+modelo <- auto.arima(ts_semana)
+# summary(modelo)
+# resid01 <- modelo$residuals
+# jarque.bera.test(resid01)
+# shapiro.test(resid01)
+# Box.test(resid01, type="Ljung-Box")
+ 
+# myboxplot1 <- boxplot(modelo$residuals)
+# sort(-abs(myboxplot1$out))
+# modelo$residuals
+
+# Creamos variables de impulso 
+ds1 <- c(0,0,0,0,0,0,0,0,0,0,   1,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0)#11
+
+ds2 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,1,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0)#32
+
+ds3 <- c(0,0,0,0,0,0,0,0,0,0,   0,1,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0)#12
+
+ds4 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,1,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0)#24
+
+ds5 <- c(0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,1,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0)#19
+
+ds6 <- c(0,0,0,0,1,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0)#5
+
+ds7 <- c(0,0,0,0,0,0,1,0,0,0,   0,0,0,0,0,0,0,0,0,0,      0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,   0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0,    0,0,0,0,0,0,0,0,0,0)#7
+
+d_s1 <- ts(ds1, start = c(2025,12), frequency = 52)
+d_s2 <- ts(ds2, start = c(2025,12), frequency = 52)
+d_s3 <- ts(ds3, start = c(2025,12), frequency = 52)
+d_s4 <- ts(ds4, start = c(2025,12), frequency = 52)
+d_s5 <- ts(ds5, start = c(2025,12), frequency = 52)
+d_s6 <- ts(ds6, start = c(2025,12), frequency = 52)
+d_s7 <- ts(ds7, start = c(2025,12), frequency = 52)
+
+exogen <- ts.intersect(d_s1,d_s2)
+
+exogen1 <-window(exogen, start = c(2025, 12), end=c(2026, 27))
+exogen2<-window(exogen, start = c(2026, 28))
+exogen2 <- matrix(0, nrow = 14, ncol = 1)
+
+modelo1 <- Arima(ts_semana,
+                 order = c(0,1,0),
+                 xreg = as.matrix(exogen1),
+                 include.mean = TRUE)
+
+# summary(modelo1)
+# resid02 <- modelo1$residuals
+# jarque.bera.test(resid02)
+# shapiro.test(resid02)
+# Box.test(resid02, type="Ljung-Box")
+
+exogen2 <- matrix(0, nrow = 4, ncol = 2)
+
+pronostico <- forecast(modelo1,
+                       h = 4, level = c(20,30,40,50,60,70,80,90,95),
+                       xreg = exogen2)
+
+
+pronostico2026 <- data.frame(pronostico)
+pronostico_domingo <- pronostico2026$Point.Forecast[1]
+
+library(ggplot2)
+
+x <- c("Lunes 27 Julio","Martes 28 Julio","Miercoles 29 Julio","Jueves 30 Julio",
+       "Viernes 31 Julio","Sabado 1 Agosto","Domingo 2 Agosto")
+# Tu vector de referencia
+y <- c(pronostico_lunes,pronostico_martes,pronostico_miercoles,pronostico_jueves,
+       pronostico_viernes,pronostico_sabado,pronostico_domingo)# original
+#y <- y+c(0.20,0.15,0.10,0.05,0.025,0.0125,0.00625)
+y <- round(y,2)
+data_prueba <- data.frame(
+  x = factor(x, levels = x), 
+  y = y)
+
+# library(hrbrthemes) # Opcional: si la tienes, theme_modern_rc() es brutal para esto.
+
+ggplot(data = data_prueba, aes(x = x, y = y, group = 1)) +
+  # 1. Ajustamos el LOESS para fondo oscuro
+  geom_smooth(method = "loess", color = "#444444", fill = "#ffffff", alpha = 0.07, size = 0.6) +
+  
+  # 2. Líneas y puntos con colores de alta visibilidad (ej. Azul eléctrico brillante)
+  geom_line(color = "#00f2fe", size = 1.2) + 
+  geom_point(color = "#4facfe", size = 3) +
+  
+  # 3. Textos de los datos en blanco
+  geom_text(aes(label = y), vjust = -1.2, size = 3.5, fontface = "bold", color = "#ffffff") +
+  
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2))) +
+  labs(
+    title = "Modelos ARIMA diarios consolidados (Ajustados)",
+    subtitle = "Agosto 2026",
+    x = "Día de la semana",
+    y = "Valor Bs/USDT"
+  ) +
+  
+  # 4. Construcción del entorno Dark con theme_minimal y overrides de color
+  theme_minimal() + 
+  theme(
+    # Colores de fondos del canvas
+    plot.background = element_rect(fill = "#121212", color = NA),
+    panel.background = element_rect(fill = "#1e1e1e", color = NA),
+    
+    # Textos principales (Títulos y subtítulos)
+    plot.title = element_text(face = "bold", size = 14, color = "#ffffff"),
+    plot.subtitle = element_text(size = 11, color = "#aaaaaa"),
+    
+    # Ejes y etiquetas
+    axis.title = element_text(color = "#cccccc"),
+    axis.text = element_text(color = "#999999"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    
+    # Cuadrícula sutil
+    panel.grid.major = element_line(color = "#2d2d2d"),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+## Column 2
+### Valores Reales Diarios (Binance vs Dólar Flexible)
+```{r}
+# Reconstruimos las fechas reales a partir de las etiquetas de texto usadas
+# en el pronóstico (mismo periodo), para poder buscar el valor real de cada serie.
+# Si una fecha aún no tiene dato disponible (p. ej. días futuros), queda como NA.
+meses_mapa <- c("Enero"=1,"Febrero"=2,"Marzo"=3,"Abril"=4,"Mayo"=5,"Junio"=6,
+                "Julio"=7,"Agosto"=8,"Septiembre"=9,"Octubre"=10,"Noviembre"=11,"Diciembre"=12)
+
+fechas_reales <- as.Date(sapply(x, function(txt) {
+  partes <- stringr::str_match(txt, "(\\d{1,2})\\s+(\\w+)$")
+  dia <- as.numeric(partes[2])
+  mes <- meses_mapa[[partes[3]]]
+  sprintf("2026-%02d-%02d", mes, dia)
+}))
+
+# Valor real Binance (promedio diario)
+valores_binance <- data.frame(Dia = fechas_reales) %>%
+  left_join(df_dia %>% mutate(Dia = as.Date(Dia)), by = "Dia") %>%
+  pull(Promedio)
+
+# Valor real Dólar Referencial Flexible (BCB)
+valores_bcb <- data.frame(fecha = fechas_reales) %>%
+  left_join(databcb %>% mutate(fecha = as.Date(fecha)), by = "fecha") %>%
+  pull(usd_bcb)
+
+data_real <- data.frame(
+  x = factor(x, levels = x),
+  Binance = round(valores_binance, 2),
+  BCB_Flexible = round(valores_bcb, 2)
+)
+
+data_real_long <- data_real %>%
+  pivot_longer(cols = c(Binance, BCB_Flexible), names_to = "Serie", values_to = "Valor")
+
+ggplot(data_real_long, aes(x = x, y = Valor, color = Serie, group = Serie)) +
+  geom_line(size = 1.2, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  geom_text(aes(label = ifelse(is.na(Valor), "", Valor)),
+            vjust = -1.2, size = 3.2, fontface = "bold", show.legend = FALSE, na.rm = TRUE) +
+  scale_color_manual(values = c("Binance" = "#1ee29d", "BCB_Flexible" = "#2b93ff")) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2))) +
+  labs(
+    title = "Valores Reales Diarios (Binance vs Dólar Flexible)",
+    subtitle = "Mismo periodo del modelo ARIMA — sin dato disponible se muestra como NA",
+    x = "Día de la semana",
+    y = "Valor Bs/USD",
+    color = "Serie"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "#121212", color = NA),
+    panel.background = element_rect(fill = "#1e1e1e", color = NA),
+    plot.title = element_text(face = "bold", size = 14, color = "#ffffff"),
+    plot.subtitle = element_text(size = 10, color = "#aaaaaa"),
+    axis.title = element_text(color = "#cccccc"),
+    axis.text = element_text(color = "#999999"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.text = element_text(color = "#e6edf3"),
+    legend.title = element_text(color = "#e6edf3"),
+    legend.background = element_rect(fill = "#121212"),
+    panel.grid.major = element_line(color = "#2d2d2d"),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+
+
+
+
+
+
+
+

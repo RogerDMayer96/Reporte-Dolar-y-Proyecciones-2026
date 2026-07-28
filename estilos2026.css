@@ -1,0 +1,497 @@
+/* ============================================================
+   PALETA BASE – Dólar Blue Dashboard (Tema Oscuro)
+   bg:      #0d1117   (fondo principal)
+   surface: #161b22   (paneles / tarjetas)
+   border:  #21262d   (separadores)
+   primary: #1ee29d   (acento principal — verde menta)
+   accent2: #537D8D   (azul acero)
+   accent3: #0CCA4A   (verde vivo)
+   text:    #e6edf3   (texto principal)
+   muted:   #8b949e   (texto secundario)
+   ============================================================ */
+
+/* ── Viewport & base ───────────────────────────────────────── */
+html, body {
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overflow-x: hidden;
+  background-color: #0d1117;
+  color: #e6edf3;
+}
+
+/* ── Navbar ────────────────────────────────────────────────── */
+.navbar {
+  background: linear-gradient(135deg, #0d1117 0%, #161b22 100%) !important;
+  border-bottom: 2px solid #1ee29d !important;
+  box-shadow: 0 2px 12px rgba(30, 226, 157, 0.15);
+}
+
+.navbar-brand,
+.navbar-nav > li > a,
+.navbar .navbar-nav > .active > a {
+  color: #e6edf3 !important;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.navbar-nav > li > a:hover,
+.navbar-nav > li > a:focus {
+  color: #1ee29d !important;
+  background-color: rgba(30, 226, 157, 0.1) !important;
+  border-radius: 4px;
+}
+
+.navbar-nav > .active > a,
+.navbar-nav > .active > a:hover,
+.navbar-nav > .active > a:focus {
+  color: #1ee29d !important;
+  background-color: rgba(30, 226, 157, 0.15) !important;
+  border-bottom: 2px solid #1ee29d;
+}
+
+/* ── Fondo general del dashboard ───────────────────────────── */
+.dashboard-page-wrapper,
+.dashboard-page-wrapper > .container-fluid {
+  background-color: #0d1117;
+}
+
+/* ── Secciones (pages) ─────────────────────────────────────── */
+.section.level1 {
+  padding: 0;
+}
+
+/* ── Columnas y filas ──────────────────────────────────────── */
+.chart-wrapper {
+  background-color: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ── Títulos de paneles ────────────────────────────────────── */
+.chart-title {
+  background: linear-gradient(90deg, #161b22 0%, #0d1117 100%);
+  color: #1ee29d !important;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #21262d;
+  padding: 8px 14px;
+}
+
+/* ── Pestañas (tabset) ─────────────────────────────────────── */
+.nav-tabs {
+  border-bottom: 1px solid #21262d !important;
+  background-color: #0d1117;
+}
+
+.nav-tabs > li > a {
+  color: #8b949e !important;
+  background-color: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 4px 4px 0 0;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.nav-tabs > li > a:hover {
+  color: #1ee29d !important;
+  border-color: #21262d #21262d transparent !important;
+  background-color: rgba(30, 226, 157, 0.05) !important;
+}
+
+.nav-tabs > li.active > a,
+.nav-tabs > li.active > a:hover,
+.nav-tabs > li.active > a:focus {
+  color: #1ee29d !important;
+  background-color: #161b22 !important;
+  border-color: #21262d #21262d #161b22 !important;
+  border-bottom-color: #161b22 !important;
+  font-weight: 700;
+}
+
+.tab-content {
+  background-color: #161b22;
+  border: 1px solid #21262d;
+  border-top: none;
+}
+
+/* ── Textos descriptivos de página ────────────────────────── */
+.section.level1 > p,
+.dashboard-page-wrapper p {
+  color: #8b949e;
+  font-size: 0.88rem;
+  padding: 6px 14px;
+  background-color: rgba(22, 27, 34, 0.7);
+  border-left: 3px solid #1ee29d;
+  margin: 6px 0;
+  border-radius: 0 4px 4px 0;
+}
+
+/* ── Tablas kableExtra ─────────────────────────────────────── */
+table.table {
+  background-color: #161b22 !important;
+  color: #e6edf3 !important;
+  border-color: #21262d !important;
+}
+
+table.table th {
+  background-color: #0d1117 !important;
+  color: #1ee29d !important;
+  border-color: #21262d !important;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+table.table td {
+  border-color: #21262d !important;
+  font-size: 0.83rem;
+  vertical-align: middle;
+}
+
+table.table-striped > tbody > tr:nth-of-type(odd) {
+  background-color: rgba(13, 17, 23, 0.6) !important;
+}
+
+table.table-hover > tbody > tr:hover {
+  background-color: rgba(30, 226, 157, 0.08) !important;
+}
+
+.table-condensed > thead > tr > th,
+.table-condensed > tbody > tr > td {
+  padding: 5px 8px;
+}
+
+/* Encabezado de grupos kableExtra */
+thead tr:first-child th {
+  background-color: #0d1117 !important;
+  color: #537D8D !important;
+  border-bottom: 2px solid #1ee29d !important;
+}
+
+/* ── Tablas DT (DataTables) ────────────────────────────────── */
+.dataTables_wrapper {
+  background-color: #161b22;
+  color: #e6edf3;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.dataTables_wrapper .dataTables_filter input,
+.dataTables_wrapper .dataTables_length select {
+  background-color: #0d1117 !important;
+  color: #e6edf3 !important;
+  border: 1px solid #21262d !important;
+  border-radius: 4px;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+  color: #8b949e !important;
+  background-color: transparent !important;
+  border: 1px solid #21262d !important;
+  border-radius: 4px;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+  color: #1ee29d !important;
+  background-color: rgba(30, 226, 157, 0.1) !important;
+  border-color: #1ee29d !important;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
+  color: #1ee29d !important;
+  background: rgba(30, 226, 157, 0.15) !important;
+  border-color: #1ee29d !important;
+}
+
+table.dataTable {
+  background-color: #161b22 !important;
+  color: #e6edf3 !important;
+}
+
+table.dataTable thead th {
+  background-color: #0d1117 !important;
+  color: #1ee29d !important;
+  border-bottom: 2px solid #1ee29d !important;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+
+table.dataTable tbody tr {
+  background-color: #161b22 !important;
+}
+
+table.dataTable tbody tr:hover {
+  background-color: rgba(30, 226, 157, 0.07) !important;
+}
+
+table.dataTable tbody tr.odd {
+  background-color: rgba(13, 17, 23, 0.5) !important;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+::-webkit-scrollbar-thumb {
+  background: #21262d;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #1ee29d;
+}
+
+/* ── Output de texto R (cat, print) ────────────────────────── */
+pre, code {
+  background-color: #0d1117 !important;
+  color: #1ee29d !important;
+  border: 1px solid #21262d;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* ── Plotly / Highcharts container ─────────────────────────── */
+.plotly, .highcharts-container {
+  background-color: #0d1117 !important;
+  border-radius: 6px;
+}
+
+/* ── Value boxes (si se usan) ──────────────────────────────── */
+.value-box {
+  background-color: #161b22 !important;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  color: #e6edf3 !important;
+}
+
+/* ============================================================
+   RESPONSIVIDAD MÓVIL (Android & iOS)
+   ============================================================ */
+
+/* Viewport hint para iOS Safari */
+@supports (-webkit-touch-callout: none) {
+  html {
+    height: -webkit-fill-available;
+  }
+}
+
+/* ── Tabletas y pantallas medianas (≤ 992 px) ──────────────── */
+@media (max-width: 992px) {
+  .navbar-brand {
+    font-size: 0.95rem;
+  }
+
+  .chart-title {
+    font-size: 0.78rem;
+  }
+
+  table.table th,
+  table.table td,
+  table.dataTable thead th {
+    font-size: 0.75rem;
+    padding: 4px 6px;
+  }
+
+  .dataTables_wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ── Móviles (≤ 768 px) ────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Navbar: apilada */
+  .navbar-collapse {
+    background-color: #161b22;
+    border-top: 1px solid #21262d;
+  }
+
+  /* Columnas de flexdashboard: apiladas en móvil */
+  .dashboard-row {
+    flex-direction: column !important;
+  }
+
+  .dashboard-row > .chart-wrapper,
+  [data-width] {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+    margin-bottom: 10px;
+  }
+
+  /* Pestañas: scroll horizontal en mobile */
+  .nav-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .nav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-tabs > li > a {
+    white-space: nowrap;
+    font-size: 0.78rem;
+    padding: 6px 10px;
+  }
+
+  /* Tablas: scroll horizontal */
+  .table-responsive,
+  .dataTables_wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table.table,
+  table.dataTable {
+    min-width: 500px;
+  }
+
+  table.table th,
+  table.table td,
+  table.dataTable thead th {
+    font-size: 0.72rem;
+    padding: 3px 5px;
+    white-space: nowrap;
+  }
+
+  /* Texto descriptivo */
+  .section.level1 > p {
+    font-size: 0.80rem;
+    padding: 5px 10px;
+  }
+
+  /* Gráficos: altura ajustada */
+  .chart-stage,
+  .chart-stage-flex {
+    height: 280px !important;
+  }
+
+  /* Highcharts responsivo */
+  .highcharts-container,
+  .highcharts-root {
+    width: 100% !important;
+  }
+}
+
+/* ── Móviles pequeños (≤ 480 px) ──────────────────────────── */
+@media (max-width: 480px) {
+  .navbar-brand {
+    font-size: 0.8rem;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chart-title {
+    font-size: 0.70rem;
+    padding: 6px 10px;
+  }
+
+  .nav-tabs > li > a {
+    font-size: 0.70rem;
+    padding: 5px 8px;
+  }
+
+  table.table th,
+  table.table td,
+  table.dataTable thead th {
+    font-size: 0.68rem;
+    padding: 2px 4px;
+  }
+
+  .chart-stage,
+  .chart-stage-flex {
+    height: 240px !important;
+  }
+
+  pre, code {
+    font-size: 0.75rem;
+  }
+}
+
+/* ============================================================
+   SECCIONES PREMIUM (Blur + Marca de agua "Solo suscriptores")
+   ============================================================ */
+
+/* El contenedor de la página se vuelve el marco de referencia
+   para posicionar la marca de agua encima de todo su contenido */
+.premium-locked {
+  position: relative;
+  overflow: hidden;
+  min-height: 420px;
+}
+
+/* Desenfoca y desactiva todo el contenido real de la sección,
+   dejando fuera solo la propia marca de agua (.premium-overlay) */
+.premium-locked > *:not(.premium-overlay) {
+  filter: blur(7px) grayscale(0.2);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Capa de marca de agua */
+.premium-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+  background: radial-gradient(circle at center, rgba(13,17,23,0.35) 0%, rgba(13,17,23,0.8) 100%);
+}
+
+.premium-overlay .po-icon {
+  font-size: 2.3rem;
+  filter: drop-shadow(0 0 10px rgba(30,226,157,0.55));
+}
+
+.premium-overlay .po-title {
+  color: #1ee29d;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.premium-overlay .po-sub {
+  color: #e6edf3;
+  font-size: 0.85rem;
+  max-width: 360px;
+  line-height: 1.45;
+}
+
+.premium-overlay .po-badge {
+  margin-top: 4px;
+  padding: 6px 18px;
+  background: rgba(30, 226, 157, 0.12);
+  border: 1px solid #1ee29d;
+  color: #1ee29d;
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 20px;
+}
+
+@media (max-width: 768px) {
+  .premium-overlay .po-icon { font-size: 1.8rem; }
+  .premium-overlay .po-title { font-size: 0.92rem; }
+  .premium-overlay .po-sub { font-size: 0.78rem; max-width: 260px; }
+  .premium-locked { min-height: 320px; }
+}
